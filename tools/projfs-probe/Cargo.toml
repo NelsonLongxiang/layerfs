@@ -1,0 +1,12 @@
+[package]
+name = "layerfs-projfs-probe"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+# Independent diagnostic; not a product workspace member or SDK implementation.
+[workspace]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_ProjectedFileSystem", "Win32_System_LibraryLoader", "Win32_System_Com"] }
