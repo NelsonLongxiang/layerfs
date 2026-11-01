@@ -43,9 +43,14 @@ export function resolveSettings(given = {}) {
   if (typeof given.home !== "string" || !isAbsolute(given.home)) throw new LayerFSError("InvalidInput", "settings.home must be an absolute LayerFS home folder", null);
   const platform = given.platform ?? PLATFORMS[process.platform];
   if (!Object.values(PLATFORMS).includes(platform)) throw new LayerFSError("Unsupported", `LayerFS runs on Linux, macOS and Windows, not ${process.platform}`, null);
+  // The Windows-native Store route (#352, owner 2026-10-25): Store calls in this
+  // process, no WSL worker and no Docker engine. `native` is the setting; the
+  // environment variable stays as an alias for scripts that predate it.
+  const native = (given.native ?? (process.env.LAYERFS_NATIVE === "1" || process.env.DSH_LAYERFS_NATIVE === "1")) === true && platform === "windows";
   const bundle = given.bundle || null;
   const settings = {
-    platform,
+    platform: native ? "native-windows" : platform,
+    native,
     home: given.home,
     image: given.image || null,
     bundle,
@@ -58,7 +63,7 @@ export function resolveSettings(given = {}) {
     pollMs: given.pollMs ?? 400,
     sweep: given.sweep !== false,
   };
-  if (platform === "windows") {
+  if (platform === "windows" && !native) {
     const hash = createHash("sha256").update(given.home).digest("hex").slice(0, 16);
     settings.wsl = {
       distribution: given.wsl?.distribution || "Ubuntu",
@@ -75,9 +80,10 @@ export function resolveSettings(given = {}) {
 }
 
 /** Settings Init and Workspaces need that are not given. macOS and Windows need a bundle too. */
-export const missing = (settings) => [
+export const missing = (settings) => settings.native ? [] : [
   ...["image", "daemon", ...(settings.platform === "linux" ? [] : ["bundle"])].filter((name) => !settings[name]),
 ];
 
 /** The LayerFS home as LayerFS calls see it (Windows: the WSL one). */
-export const callHome = (settings) => settings.wsl?.home ?? settings.home;
+/** The LayerFS home as LayerFS calls see it (Windows worker: the WSL one; native route: this one). */
+export const callHome = (settings) => settings.native ? settings.home : settings.wsl?.home ?? settings.home;

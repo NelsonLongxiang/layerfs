@@ -21,6 +21,7 @@ import { status } from "./status.js";
 import linux from "./platform/linux/index.js";
 import macos from "./platform/macos/index.js";
 import windows from "./platform/windows/index.js";
+import nativeWindows from "./platform/native-windows/index.js";
 import { list } from "./project/list.js";
 import { InitJobs } from "./project/jobs.js";
 import { prepare, runInit } from "./project/init.js";
@@ -33,7 +34,7 @@ import { sweep } from "./sandbox/sweep.js";
 import { list as listVolumes, remove as removeVolumes } from "./volume.js";
 import { subscribe } from "./events/subscribe.js";
 
-const PLATFORMS = { linux, macos, windows };
+const PLATFORMS = { linux, macos, windows, "native-windows": nativeWindows };
 /** Held only by `open`: the constructor refuses without it. */
 const FACTORY = Symbol("LayerFSRuntime.open");
 
@@ -42,7 +43,9 @@ export class LayerFSRuntime {
    * `sweep` (the default) it then runs one runtime.sandbox.sweep in the background, reported by status().sweep. */
   static async open(settings = {}) {
     const runtime = new LayerFSRuntime(resolveSettings(settings), FACTORY);
-    if (runtime.settings.sweep) runtime.#startSweep();
+    // The sweep deletes stopped Sandboxes through Docker; the Windows-native
+    // Store route has neither, so it never sweeps.
+    if (runtime.settings.sweep && !runtime.settings.native) runtime.#startSweep();
     return runtime;
   }
 

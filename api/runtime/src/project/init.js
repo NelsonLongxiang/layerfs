@@ -80,9 +80,15 @@ export async function runInit(runtime, prepared, report = () => {}) {
   report({ step: "scan" });
   const totals = await scanSource(project.source, (counts) => report({ scanned: counts }));
   report({ step: "volume", totals });
-  await platform.init(settings);
+  if (settings.native) {
+    // The Windows-native route's volume is a directory under the LayerFS home.
+    const { mkdirSync } = await import("node:fs");
+    const { join: winJoin } = await import("node:path");
+    project.volume = winJoin(settings.home, "volumes", `${project.name}-store-${project.created.toString(36)}`);
+    mkdirSync(winJoin(project.volume, "global"), { recursive: true });
+  } else await platform.init(settings);
   // its owner, for runtime.volume.list: Docker sets a volume's labels only when it creates it
-  await platform.docker(settings, ["volume", "create", "--label", "layerfs.role=store", "--label", `layerfs.home=${settings.home}`, "--label", `layerfs.project=${project.name}`, project.volume], { timeout: 30_000 });
+  if (!settings.native) await platform.docker(settings, ["volume", "create", "--label", "layerfs.role=store", "--label", `layerfs.home=${settings.home}`, "--label", `layerfs.project=${project.name}`, project.volume], { timeout: 30_000 });
   report({ step: "import" });
   let client;
   try {

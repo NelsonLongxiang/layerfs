@@ -6,6 +6,20 @@ import { missing } from "./settings.js";
 
 export async function status(runtime) {
   const { settings, platform } = runtime;
+  if (settings.native) {
+    // The Windows-native Store route serves Store calls in-process and uses no
+    // Docker engine and no worker, so neither is probed or reported.
+    let home = null;
+    try { const s = statfsSync(settings.home); home = s.bavail * s.bsize; } catch { /* unreadable */ }
+    return {
+      platform: platform.name,
+      native: true,
+      missing: missing(settings),
+      docker: { level: "not-used", note: "the Windows-native route runs Store calls in this process; no Docker engine is involved" },
+      worker: null,
+      disk: { home, volumes: null },
+    };
+  }
   let docker;
   try { docker = { level: "ok", version: await platform.docker(settings, ["version", "--format", "{{.Server.Version}}"]) }; } catch (error) {
     docker = { level: "down", error: error.stderr?.trim() || error.message };
