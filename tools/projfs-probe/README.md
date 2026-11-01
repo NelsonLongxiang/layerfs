@@ -335,3 +335,45 @@ read-only process checks both exact historical versions and base membership.
 This qualifies a bounded one-Workspace/one-Commit-versus-mutation interleaving, not
 multiple concurrent publishers, arbitrary callback concurrency, cache/section drain,
 crash recovery or ApplicationVisible semantics. No forced caller unmap or flush is used.
+
+## Normal close admission before native stop
+
+StopDispatcher/STOP0 is not a reversible busy probe: the pinned native driver
+stops its request queue, drains dispatcher threads and then cancels remaining IRPs.
+The diagnostic now calls prepare_close before any stop or detach. Under the same
+Session admission mutex it refuses retained failure, pending/unsettled Commit,
+owned capture, or any tracked OpenFile/KernelDirectory. A refusal leaves the
+Session and mounted service unchanged. Application File closure is not used in
+place of the exact native Close callback, including when a mapped view remains.
+
+When admission succeeds, closing fences subsequent file/open/create/capture/Commit
+operations before the mutex is released. The host then performs dispatcher stop,
+mount removal, kernel revoke and Overlay close. finish_started prevents a second
+terminal attempt after any partial result; uncertainty is retained, not replayed.
+The independent diagnostic capture must now be explicitly released first, never
+silently discarded by finish. This preserves the distinction from a real Commit.
+
+The host consumes each stop request once. A Busy response does not invoke stop or
+unmount, and subsequent ordinary file access must still work. After the external
+owner releases its references, a **new explicit request** may close. Tests can ask
+close-inspect to observe adapter Close receipts, but that observation is not close
+admission: prepare_close rechecks and fences atomically, so new opens can still
+make the later request Busy. No fixed sleep/retry or forced caller cancellation.
+
+```powershell
+node tools/winfsp-close-test.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <target>/debug/layerfs-projfs-probe.exe <fresh-output>
+node tools/winfsp-close-test.mjs --self-test <fresh-output>/result.json
+```
+
+The ordinary client retains a file, then directory, then writable view with File
+open, then view-only after File and section HANDLE close. Each normal-close probe
+must refuse before effect, and reads/enumeration/view writes remain usable. A real
+stop request with another external file open must also refuse; after release, a
+new stop request has an ordered prepared -> dispatcher drain -> Overlay close trace.
+C++ drain output is flushed before calling Rust finish so receipt order is causal.
+
+CloseState is an adapter reference inventory, not a universal kernel section or
+cache-dirty inventory. The tests know which external references they created and
+verify their release; they do not qualify every hidden mapping/cache/ref race,
+forced teardown, crash recovery or full product Workspace. Error/timeout exit is
+reported as DIAGNOSTIC_EXIT_NOT_NORMAL rather than claiming a successful close.

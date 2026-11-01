@@ -79,6 +79,8 @@ try{
  while(!existsSync(join(control,'ready'))){assert.equal(provider.item.exit,null,provider.item.stdout+provider.item.stderr);assert.equal(provider.item.error,null);assert.ok(Date.now()<until,'provider ready deadline');await new Promise(r=>setTimeout(r,10));}
  application=launch(client,['cache-child',out],{...process.env,LAYERFS_PROJFS_PROBE_CHILD_ROOT:out});
  const app=await application.ended;assert.equal(app.exit?.code,0,app.stdout+app.stderr);assert.equal(app.exit?.signal,null);
+ writeFileSync(join(control,'close-inspect'),'inspect',{flag:'wx'});
+ const closeDeadline=Date.now()+10000;while(!existsSync(join(control,'close-idle'))){assert.equal(provider.item.exit,null,provider.item.stdout+provider.item.stderr);assert.ok(Date.now()<closeDeadline,'Close receipt readiness deadline');await new Promise(r=>setTimeout(r,5));}
  writeFileSync(join(control,'stop'),'stop',{flag:'wx'});
  const prov=await provider.ended;assert.equal(prov.exit?.code,0,prov.stdout+prov.stderr);assert.equal(prov.exit?.signal,null);
  const analysis=analyze(prov.stdout,app.stdout);const phases=analysis.phases;

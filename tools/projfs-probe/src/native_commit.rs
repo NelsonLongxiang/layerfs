@@ -46,6 +46,7 @@ impl Session {
         if scope == CommitScope::ApplicationVisible {
             return Err(refused(0xc00000bb,"application-visible cache/section capture is not supported; explicitly request published-frontier semantics"));
         }
+        self.accepting()?;
         if self.pending_commit.is_some() {
             return Err(refused(0x80000011, "Commit already admitted"));
         }

@@ -26,6 +26,11 @@ struct Stat {
   UINT32 nanos, mode, directory, reserved;
 };
 static_assert(sizeof(Stat) == 40, "Rust ABI Stat size");
+struct CloseState {
+  UINT64 files, directories;
+  UINT32 pending_commit, capture, retained, prepared;
+};
+static_assert(sizeof(CloseState) == 32, "Rust ABI CloseState size");
 struct Bridge {
   HMODULE dll = nullptr;
   INT32(__cdecl *start)(PCWSTR, UINT32) = nullptr;
@@ -54,6 +59,8 @@ struct Bridge {
   INT32(__cdecl *latest_byte)(PCWSTR, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *frontier)(UINT64 *, INT64 *, UINT64 *) = nullptr;
   INT32(__cdecl *observe)() = nullptr;
+  INT32(__cdecl *close_state)(CloseState *) = nullptr;
+  INT32(__cdecl *prepare_close)() = nullptr;
   INT32(__cdecl *finish)() = nullptr;
 } bridge;
 static PSECURITY_DESCRIPTOR security = nullptr;
@@ -439,6 +446,8 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, latest_byte, lf_latest_byte);
   LOAD(bridge, frontier, lf_frontier);
   LOAD(bridge, observe, lf_observe);
+  LOAD(bridge, close_state, lf_close_state);
+  LOAD(bridge, prepare_close, lf_prepare_close);
   LOAD(bridge, finish, lf_finish);
 #undef LOAD
   WCHAR store[32768];
@@ -446,7 +455,10 @@ int wmain(int argc, wchar_t **argv) {
   cache_mode = argc == 6 && wcscmp(argv[5], L"--cache-boundary") == 0;
   const bool concurrent_mode =
       argc == 6 && wcscmp(argv[5], L"--concurrent") == 0;
-  const bool rebound = argc == 6 && !cache_mode && !concurrent_mode;
+  const bool close_mode =
+      argc == 6 && wcscmp(argv[5], L"--close-boundary") == 0;
+  const bool rebound =
+      argc == 6 && !cache_mode && !concurrent_mode && !close_mode;
   auto started =
       rebound ? bridge.reopen(argv[5], length(argv[5]), store, length(store))
               : bridge.start(store, length(store));
@@ -499,6 +511,8 @@ int wmain(int argc, wchar_t **argv) {
   bool done = false, captured = false, checked = false;
   bool committed1 = false, committed2 = false, unchanged = false;
   unsigned cache_phase = 0;
+  unsigned close_phase = 0;
+  bool close_prepared = false, close_checked = false, idle_reported = false;
   std::thread commit_worker;
   std::atomic<bool> worker_done{false};
   INT32 worker_status = STATUS_PENDING;
@@ -513,6 +527,44 @@ int wmain(int argc, wchar_t **argv) {
     fflush(stdout);
     auto deadline = GetTickCount64() + 45000;
     while (GetTickCount64() < deadline) {
+      if (close_mode && close_phase < 4) {
+        WCHAR request[32], ack[32];
+        swprintf_s(request, L"close-attempt-%u", close_phase);
+        swprintf_s(ack, L"close-refused-%u", close_phase);
+        if (exists(argv[3], request)) {
+          CloseState before{}, after{};
+          if (bridge.close_state(&before) < 0)
+            break;
+          auto refused = bridge.prepare_close();
+          if (bridge.close_state(&after) < 0 || refused != STATUS_DEVICE_BUSY ||
+              memcmp(&before, &after, sizeof(before)) || after.prepared)
+            break;
+          printf("NORMAL_CLOSE_REFUSED phase=%u status=%08lx files=%llu "
+                 "directories=%llu commit=%u capture=%u prepared=%u "
+                 "service_kept=true\n",
+                 close_phase, static_cast<ULONG>(refused), before.files,
+                 before.directories, before.pending_commit, before.capture,
+                 before.prepared);
+          fflush(stdout);
+          if (!mark(argv[3], ack))
+            break;
+          ++close_phase;
+        }
+      }
+      if (exists(argv[3], L"close-inspect") && !idle_reported) {
+        CloseState state{};
+        if (bridge.close_state(&state) < 0)
+          break;
+        if (!state.files && !state.directories && !state.pending_commit &&
+            !state.capture && !state.retained && !state.prepared) {
+          puts("NORMAL_CLOSE_IDLE tracked_close_receipts=true "
+               "no_section_inventory_claim=true");
+          fflush(stdout);
+          if (!mark(argv[3], L"close-idle"))
+            break;
+          idle_reported = true;
+        }
+      }
       if (concurrent_mode) {
         if (!worker_started && exists(argv[3], L"concurrent-start")) {
           worker_started = true;
@@ -533,6 +585,7 @@ int wmain(int argc, wchar_t **argv) {
             if (bridge.commit_scoped(1, &sentinel) != STATUS_DEVICE_BUSY ||
                 sentinel != 0xa5a5a5a5u ||
                 bridge.capture() != STATUS_DEVICE_BUSY ||
+                bridge.prepare_close() != STATUS_DEVICE_BUSY ||
                 bridge.finish() != STATUS_DEVICE_BUSY)
               break;
             captured_generation = capture_now;
@@ -686,8 +739,8 @@ int wmain(int argc, wchar_t **argv) {
           ++cache_phase;
         }
       }
-      if (!concurrent_mode && !cache_mode && !rebound && !captured &&
-          exists(argv[3], L"capture")) {
+      if (!close_mode && !concurrent_mode && !cache_mode && !rebound &&
+          !captured && exists(argv[3], L"capture")) {
         if (bridge.capture() < 0)
           break;
         captured = true;
@@ -760,7 +813,34 @@ int wmain(int argc, wchar_t **argv) {
         if (!mark(argv[3], L"committed-unchanged"))
           break;
       }
-      if (exists(argv[3], L"stop")) {
+      if (!close_checked && exists(argv[3], L"stop")) {
+        close_checked = true;
+        auto admission = bridge.prepare_close();
+        if (admission == STATUS_DEVICE_BUSY) {
+          puts("NORMAL_CLOSE_REFUSED request=stop service_kept=true");
+          fflush(stdout);
+          if (!mark(argv[3], L"stop-refused"))
+            break;
+          // This request is consumed, never busy-retried. An external
+          // controller may release its references and make a distinct terminal
+          // request.
+        } else if (admission < 0) {
+          break;
+        } else {
+          close_prepared = true;
+          done = true;
+          break;
+        }
+      }
+      if (close_checked && !close_prepared &&
+          exists(argv[3], L"stop-after-release")) {
+        auto admission = bridge.prepare_close();
+        if (admission < 0) {
+          fprintf(stderr, "normal close second request=%08lx\n",
+                  static_cast<ULONG>(admission));
+          break;
+        }
+        close_prepared = true;
         done = true;
         break;
       }
@@ -775,11 +855,26 @@ int wmain(int argc, wchar_t **argv) {
       mark(argv[3], L"lane-release");
     commit_worker.join();
   }
+  if (!close_prepared) {
+    fprintf(stderr,
+            "DIAGNOSTIC_EXIT_NOT_NORMAL no_successful_close_admission=true\n");
+    // No claim of graceful unmount on an error/timeout. The isolated test
+    // process exits; normal code must retain custody rather than guess a
+    // reversible stop.
+    return 1;
+  }
+  puts("NORMAL_CLOSE_STOP_BEGIN prepared=true");
+  fflush(stdout);
   api.stop(fs);
+  puts("NORMAL_CLOSE_DISPATCHER_DRAINED");
+  fflush(stdout); // Keep the completed native drain before Rust finish in the
+                  // receipt.
   api.unmount(fs);
   api.destroy(fs);
   LocalFree(security);
   auto closed = bridge.finish();
+  if (closed == 0)
+    puts("NORMAL_CLOSE_DONE detach=true overlay_closed=true");
   printf("CALLBACKS create=%ld open=%ld read=%ld write=%ld rename=%ld "
          "cleanup=%ld close=%ld delete=%ld errors=%ld\n",
          creates, opens, reads, writes, renames, cleanups, closes, deletes,
@@ -790,16 +885,20 @@ int wmain(int argc, wchar_t **argv) {
   } // failure keeps original Rust owner state until process ends
   puts("NOT_RUN product_Workspace general_concurrency mapped_lifecycle "
        "full_repository");
-  return done && closed == 0 && !callback_error && (cache_mode || unchanged) &&
-                 (concurrent_mode
-                      ? (concurrent_captured && concurrent_written &&
-                         committed1 && committed2)
-                      : (cache_mode
-                             ? (cache_phase == 8 && creates && writes)
-                             : (rebound ? (opens && reads)
-                                        : (captured && checked && committed1 &&
-                                           committed2 && creates && reads &&
-                                           writes && renames && deletes))))
+  return done && closed == 0 && !callback_error &&
+                 (close_mode || cache_mode || unchanged) &&
+                 (close_mode
+                      ? (close_phase == 4 && opens && reads)
+                      : (concurrent_mode
+                             ? (concurrent_captured && concurrent_written &&
+                                committed1 && committed2)
+                             : (cache_mode
+                                    ? (cache_phase == 8 && creates && writes)
+                                    : (rebound ? (opens && reads)
+                                               : (captured && checked &&
+                                                  committed1 && committed2 &&
+                                                  creates && reads && writes &&
+                                                  renames && deletes)))))
              ? 0
              : 1;
 }

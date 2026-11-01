@@ -68,6 +68,7 @@ try{
  const second=Buffer.alloc(14);readSync(held,second,0,14,0);assert.equal(second.toString(),'final! capture');
  writeFileSync(join(control,'commit-unchanged'),'commit',{flag:'wx'});await phase('committed-unchanged');
  closeSync(held);held=undefined;
+ writeFileSync(join(control,'close-inspect'),'inspect',{flag:'wx'});await phase('close-idle');
  writeFileSync(join(control,'stop'),'stop',{flag:'wx'});
  const result=await ended;assert.equal(result.code,0,stdout+stderr);assert.equal(result.signal,null);
  const reopened=spawnSync(checker,['verify-commits',join(control,'store/store.sqlite')],{encoding:'utf8',timeout:20000});
@@ -101,6 +102,7 @@ try{
  assert.deepEqual(readdirSync(join(mount2,'archive')).sort(),['moved','new']);
  assert.deepEqual(readdirSync(join(mount2,'many')).sort(),Array.from({length:80},(_,i)=>'e'+String(i).padStart(3,'0')+'.txt'));assert.equal(existsSync(join(mount2,'work')),false);
  writeFileSync(join(control2,'commit-unchanged'),'commit',{flag:'wx'});await phase2('committed-unchanged');
+ writeFileSync(join(control2,'close-inspect'),'inspect',{flag:'wx'});await phase2('close-idle');
  writeFileSync(join(control2,'stop'),'stop',{flag:'wx'});const result=await ended2;
  assert.equal(result.code,0,out2+err2);assert.equal(result.signal,null);
  assert.match(out2,/STORE_REBOUND existing=true init=false/);assert.match(out2,/NATIVE_REBOUND_READY existing_store=true init=false/);

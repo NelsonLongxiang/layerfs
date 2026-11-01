@@ -112,6 +112,8 @@ fn main() {
         };
         let result = if args.len() == 2 && args[0] == "cache-child" {
             layerfs_native_probe::windows::cache_child(Path::new(&args[1]))
+        } else if args.len() == 2 && args[0] == "close-child" {
+            layerfs_native_probe::windows::close_child(Path::new(&args[1]))
         } else if args.len() == 1 && args[0] == "check" {
             check()
         } else if args.len() == 2 && args[0] == "live" {

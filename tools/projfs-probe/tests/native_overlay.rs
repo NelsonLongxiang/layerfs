@@ -54,6 +54,8 @@ fn public_overlay_bridge_preserves_capture_and_open_custody() {
     assert_eq!(s.captured_bytes("/capture.txt").unwrap(), b"before capture");
     s.close_file(h).unwrap();
     assert!(s.read(h, 0, 1).is_err());
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    s.release_capture().unwrap();
     s.finish().unwrap();
     println!("OVERLAY_UNIT_PASS retained_root={}", root.display());
 }
@@ -495,4 +497,92 @@ fn abandoned_or_misrouted_commit_keeps_admission_and_original_result() {
     println!(
         "COMMIT_CUSTODY_UNIT_PASS dropped_work_retains_admission=true foreign_result_retained=true"
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn normal_close_refuses_owned_references_then_fences_new_admission() {
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
+    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tmp")
+        .canonicalize()
+        .unwrap();
+    let root = parent.join(format!(
+        "native-close-unit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut s = Session::create(&root).unwrap();
+    let (file, _) = s.open("/alpha.txt", false).unwrap();
+    let state = s.close_state();
+    let frontier = s.frontier().unwrap();
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.close_state(), state);
+    assert_eq!(s.frontier().unwrap(), frontier);
+    assert_eq!(
+        s.read(file, 0, 100).unwrap(),
+        b"old immutable Store version\n"
+    );
+    s.close_file(file).unwrap();
+    let (dir, _) = s.open("/many", false).unwrap();
+    let state = s.close_state();
+    assert_eq!(state.directories, 1);
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.close_state(), state);
+    assert!(s.list_next(dir, None).unwrap().is_some());
+    s.close_file(dir).unwrap();
+    let (f, _) = s.create_file("/new.txt").unwrap();
+    s.write(f, 0, b"kept", false, false).unwrap();
+    s.close_file(f).unwrap();
+    s.capture().unwrap();
+    let state = s.close_state();
+    let frontier = s.frontier().unwrap();
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.close_state(), state);
+    assert_eq!(s.frontier().unwrap(), frontier);
+    s.release_capture().unwrap();
+    let work = s.begin_commit(CommitScope::Published).unwrap();
+    let state = s.close_state();
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.close_state(), state);
+    let completion = work.run();
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    s.complete_commit(completion).unwrap();
+    let frontier = s.frontier().unwrap();
+    s.prepare_close().unwrap();
+    assert_eq!(s.close_state().prepared, 1);
+    assert_eq!(
+        s.frontier().unwrap(),
+        frontier,
+        "prepare only fences adapter admission, no detach/revoke/close yet"
+    );
+    assert_eq!(
+        s.open("/alpha.txt", false).err().unwrap().status as u32,
+        0x80000011
+    );
+    assert_eq!(
+        s.create_file("/rejected.txt").err().unwrap().status as u32,
+        0x80000011
+    );
+    assert_eq!(
+        s.begin_commit(CommitScope::Published).err().unwrap().status as u32,
+        0x80000011
+    );
+    assert_eq!(s.capture().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    s.finish().unwrap();
+    assert!(s.finish().is_err());
+    let mut saved = layerfs_native_probe::saved::Saved::open(
+        &root.join("store.sqlite"),
+        layerfs_native_probe::store_fixture::BINDING,
+        layerfs_native_probe::store_fixture::CURSOR,
+        layerfs_native_probe::store_fixture::branch(),
+    )
+    .unwrap();
+    assert_eq!(saved.read("new.txt", 0, 4).unwrap(), b"kept");
+    assert!(saved.entry("rejected.txt").unwrap().is_none());
+    println!("NORMAL_CLOSE_UNIT_PASS refusals_unchanged=true admission_fenced=true history_kept=true root={}",root.display());
 }

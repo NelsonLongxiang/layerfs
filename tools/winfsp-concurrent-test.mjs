@@ -44,6 +44,7 @@ try{
  assert.equal(readFileSync(file,'utf8'),'after! commit');
  writeFileSync(join(control,'concurrent-second'),'publish',{flag:'wx'});await phase('concurrent-second-done');
  writeFileSync(join(control,'commit-unchanged'),'publish',{flag:'wx'});await phase('committed-unchanged');
+ writeFileSync(join(control,'close-inspect'),'inspect',{flag:'wx'});await phase('close-idle');
  writeFileSync(join(control,'stop'),'stop',{flag:'wx'});const stopped=await provider.ended;
  assert.equal(stopped.exit?.code,0,stopped.stdout+stopped.stderr);assert.equal(stopped.exit?.signal,null);
  assert.match(stopped.stdout,/CONCURRENT_CAPTURE .*duplicate_commit=Busy capture=Busy close=Busy/);

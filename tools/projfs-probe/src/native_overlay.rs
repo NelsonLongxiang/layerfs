@@ -5,6 +5,9 @@ use layerfs_history::CommitId;
 #[path = "native_commit.rs"]
 mod commit;
 pub use commit::{CommitCompletion, CommitWork};
+#[path = "native_close.rs"]
+mod close;
+pub use close::CloseState;
 use layerfs_overlay::{Capture, CapturedReader, Inode, KernelDirectory, KernelMount, OpenFile};
 use layerfs_store_service::{
     store::{BoundWorkspace, CommitFailure},
@@ -141,6 +144,8 @@ pub struct Session {
     store_path: PathBuf,
     commits: Vec<CommitId>,
     pending_commit: Option<u64>,
+    closing: bool,
+    finish_started: bool,
     retained_completions: Vec<CommitCompletion>,
     retained_commit: Option<Box<CommitFailure>>,
     retained_success: Option<Box<layerfs_store_service::store::CommitSuccess>>,
@@ -202,6 +207,8 @@ impl Session {
             store_path,
             commits: Vec::new(),
             pending_commit: None,
+            closing: false,
+            finish_started: false,
             retained_completions: Vec::new(),
             retained_commit: None,
             retained_success: None,
@@ -215,6 +222,7 @@ impl Session {
         Ok(self.next)
     }
     fn with<T>(&self, run: impl FnOnce(&mut Mutation<'_>) -> Result<T>) -> Result<T> {
+        self.accepting()?;
         let mut mutation =
             Mutation::new(&self.bound).map_err(|e| failed(format!("{}: {}", e.code, e.message)))?;
         let answer = run(&mut mutation);
@@ -452,6 +460,7 @@ impl Session {
         self.open(path, !directory)
     }
     pub fn read(&self, handle: u64, offset: u64, length: u32) -> Result<Vec<u8>> {
+        self.accepting()?;
         let held = self
             .handles
             .get(&handle)
@@ -694,6 +703,7 @@ impl Session {
         }
     }
     pub fn capture(&mut self) -> Result<()> {
+        self.accepting()?;
         if self.pending_commit.is_some() {
             return Err(refused(0x80000011, "Commit already admitted"));
         }
@@ -805,31 +815,22 @@ impl Session {
         saved.read(name, 0, entry.size as u32).map_err(failed)
     }
     pub fn finish(&mut self) -> Result<()> {
-        if self.pending_commit.is_some() {
-            return Err(refused(0x80000011, "Commit still owns the bound Workspace"));
+        // Native host calls prepare_close before irreversible dispatcher stop.
+        // Direct Rust callers have no WinFsp mount and can prepare here.
+        if !self.closing {
+            self.prepare_close()?;
         }
-        if self.retained_commit.is_some()
-            || self.retained_success.is_some()
-            || !self.retained_completions.is_empty()
-        {
-            return Err(failed("original Commit custody retained; no close/replay"));
+        if self.service.is_none() {
+            return Err(refused(0xc0000128, "Session already closed"));
         }
-        if !self.handles.is_empty() {
-            return Err(failed("native handles remain; retain Workspace"));
+        if self.finish_started {
+            return Err(failed(
+                "terminal finish already attempted; retain custody without replay",
+            ));
         }
+        self.finish_started = true;
         self.observe()?;
         let op = self.bound.operation().map_err(workspace_error)?;
-        if let Some((capture, reader)) = self.capture {
-            op.overlay()
-                .release_captured_reader(self.bound.route(), reader)
-                .map_err(failed)?;
-            // Diagnostic capture is not a Commit attempt: resolve without publication,
-            // preserving the live view, before terminal explicit close.
-            op.overlay()
-                .resolve_failed(self.bound.route(), capture)
-                .map_err(failed)?;
-            self.capture = None;
-        }
         op.overlay()
             .kernel_revoke(self.bound.route(), self.mount)
             .map_err(failed)?;

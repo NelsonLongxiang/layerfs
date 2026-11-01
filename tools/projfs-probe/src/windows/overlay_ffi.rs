@@ -1,5 +1,5 @@
 //! Narrow C ABI for the diagnostic native host. Unsafe never leaves windows/.
-use crate::native_overlay::{failed, CommitScope, Error, Session, Stat};
+use crate::native_overlay::{failed, CloseState, CommitScope, Error, Session, Stat};
 use std::{
     panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
@@ -390,6 +390,14 @@ pub unsafe extern "C" fn lf_frontier(
 #[no_mangle]
 pub extern "C" fn lf_observe() -> i32 {
     call(|s| s.observe())
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_close_state(out: *mut CloseState) -> i32 {
+    call(|s| unsafe { put(out, s.close_state()) })
+}
+#[no_mangle]
+pub extern "C" fn lf_prepare_close() -> i32 {
+    call(|s| s.prepare_close())
 }
 #[no_mangle]
 pub extern "C" fn lf_finish() -> i32 {
