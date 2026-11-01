@@ -12,7 +12,11 @@
 > only; the daemon stops serving them, and an unsupported setup fails
 > `Unsupported`. There is no daemon route to choose or fall back to.
 > **Windows-native route (owner, 2026-10-25):** the Store engine and this
-> in-process Store face also run natively on Windows; see §6.
+> in-process Store face also run natively on Windows; see §6. The route is a
+> platform module (`api/runtime/src/platform/native-windows`) chosen by the
+> integration's `route: native` setting since 2026-11-01, and the state of
+> that integration — including the open Workspace-on-Windows question — is in
+> [HANDOFF-2026-11-01.md](HANDOFF-2026-11-01.md).
 
 ## 1. Architecture
 
