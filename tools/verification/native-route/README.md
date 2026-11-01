@@ -90,6 +90,8 @@ Do not fabricate those fields to force --with materials,snapshot on the aggregat
 
 Round-57 [results and limits](../../../core/docs/issues/352/NATIVE-VERIFIER-PROJECTION-2026-11-01.md)
 record 19 parser/audit checks, 25 synthetic cases and the three-leaf FAIL.
+The optional meta-tooling --audit --against-git reports a known nested-root
+path failure; ordinary verify meta and chain audit passing do not erase it.
 When a projection table exists, counterexamples.mjs adds ten cases (positive,
 P1–P8 and empty); older snapshots retain the original 15-case behavior.
 

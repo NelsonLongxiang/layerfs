@@ -61,6 +61,7 @@ Tree run：`tr_4c5c97e211a2`；冻结tree：`ts_5f6d1f832dc6`。
 4. 已打开4MiB文件曾被OS预读水合，不能把4个应用读取窗口说成只驻留4个窗口；启动元数据883字节不是零I/O。
 5. 只读是Store源，不是NTFS安全沙箱；本地新文件不进入Store。开放句柄/映射、稳定Overlay捕获与Save/History未在本轮实现。
 6. 固定引擎仍是本机源码构建候选；未改变默认工作区的历史坏归档，不能把本隔离工作区通过外推为全局通过。
+7. 额外的[meta-tooling --audit --against-git](../../../../tmp/native-verify-57-20261101/meta-git-audit.json)未通过：5个工具均报无Git历史。源码firstAddBlobOf在嵌套YGL_META_ROOT下调用git show <commit>:tools/<name>，而实际路径在tools/verification/native-route/tools/内；真实git log已确认当前提交包含新工具。该固定脚本还把首登记中间版本直接对比首提交字节，初次提交前的多次登记链需另核。普通[登记链审计](../../../../tmp/native-verify-57-20261101/meta-chain-audit.json)与verify meta通过不替代这个失败；不改外部脚本、不删历史记录、不宣称Git时序审计已绿。
 
 ## 代码与后续
 
