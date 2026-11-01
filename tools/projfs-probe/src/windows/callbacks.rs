@@ -1,20 +1,27 @@
-//! Callbacks for exactly one immutable file; all context dies after Stop returns.
+//! Callbacks for a fixture or fixed Store root; state lives through Stop.
 use super::api::{Api, BUFFER_FULL, INVALID, NOT_FOUND, NO_MEMORY, UNEXPECTED};
-use crate::{read_window, NAME};
+use crate::{read_window, saved::Entry, source::Source};
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use windows_sys::core::{GUID, HRESULT, PCWSTR};
-use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_READONLY,
+};
 use windows_sys::Win32::Storage::ProjectedFileSystem::*;
 
+struct Enumeration {
+    entries: Vec<(Vec<u16>, PRJ_FILE_BASIC_INFO)>,
+    at: usize,
+}
 pub(super) struct State {
     pub api: Api,
-    pub content: Vec<u8>,
-    pub name: Vec<u16>,
-    pub enums: Mutex<HashMap<u128, bool>>,
+    pub source: Mutex<Source>,
+    pub readonly: bool,
+    enums: Mutex<HashMap<u128, Enumeration>>,
     pub notifications: Mutex<Vec<(i32, String, String)>>,
+    pub first_error: Mutex<Option<String>>,
     pub enumeration_calls: AtomicU64,
     pub placeholder_calls: AtomicU64,
     pub read_calls: AtomicU64,
@@ -23,13 +30,17 @@ pub(super) struct State {
     pub notification_overflow: AtomicU64,
 }
 impl State {
-    pub fn new(api: Api, content: Vec<u8>) -> Self {
+    pub fn new(api: Api, source: Source) -> Self {
+        fn assert_send<T: Send>() {}
+        assert_send::<Source>(); // callback threads share it only through this Mutex
+        let readonly = matches!(source, Source::Saved(_));
         Self {
             api,
-            content,
-            name: NAME.encode_utf16().chain([0]).collect(),
+            source: Mutex::new(source),
+            readonly,
             enums: Mutex::new(HashMap::new()),
             notifications: Mutex::new(Vec::new()),
+            first_error: Mutex::new(None),
             enumeration_calls: AtomicU64::new(0),
             placeholder_calls: AtomicU64::new(0),
             read_calls: AtomicU64::new(0),
@@ -38,15 +49,27 @@ impl State {
             notification_overflow: AtomicU64::new(0),
         }
     }
-    fn basic(&self) -> PRJ_FILE_BASIC_INFO {
-        PRJ_FILE_BASIC_INFO {
-            FileSize: self.content.len() as i64,
-            FileAttributes: FILE_ATTRIBUTE_NORMAL,
-            ..Default::default()
+    fn fail(&self, error: impl std::fmt::Display) -> HRESULT {
+        if let Ok(mut slot) = self.first_error.lock() {
+            if slot.is_none() {
+                *slot = Some(error.to_string());
+            }
         }
+        UNEXPECTED
     }
-    fn is_file(&self, path: PCWSTR) -> bool {
-        !path.is_null() && unsafe { (self.api.compare)(path, self.name.as_ptr()) == 0 }
+    fn basic(&self, entry: &Entry) -> Result<PRJ_FILE_BASIC_INFO, String> {
+        Ok(PRJ_FILE_BASIC_INFO {
+            IsDirectory: entry.directory,
+            FileSize: i64::try_from(entry.size).map_err(|_| "file too large for ProjFS")?,
+            FileAttributes: if entry.directory {
+                FILE_ATTRIBUTE_DIRECTORY
+            } else if self.readonly {
+                FILE_ATTRIBUTE_READONLY
+            } else {
+                FILE_ATTRIBUTE_NORMAL
+            },
+            ..Default::default()
+        })
     }
 }
 fn guid_key(g: &GUID) -> u128 {
@@ -55,8 +78,8 @@ fn guid_key(g: &GUID) -> u128 {
         | ((g.data3 as u128) << 64)
         | u64::from_be_bytes(g.data4) as u128
 }
-/// ProjFS owns callback pointers for the duration of the call. Context points
-/// to an immovable Box<State>; its fields use atomics/locks; Stop drains users.
+/// OS callback pointers are valid for the call. The immovable State and its
+/// synchronized fields outlive every callback; Stop completes before drop.
 unsafe fn call(
     data: *const PRJ_CALLBACK_DATA,
     f: impl FnOnce(&PRJ_CALLBACK_DATA, &State) -> HRESULT,
@@ -71,33 +94,65 @@ unsafe fn call(
         Ok(result) => result,
         Err(_) => {
             state.callback_panics.fetch_add(1, Ordering::Relaxed);
-            UNEXPECTED
+            state.fail("callback panic")
         }
     }
 }
-unsafe fn path_text(path: PCWSTR) -> String {
+unsafe fn path_text(path: PCWSTR) -> Result<String, String> {
     if path.is_null() {
-        return String::new();
+        return Err("missing callback path".into());
     }
-    // SDK promises a nul-terminated path; keep the diagnostic copy bounded.
     let mut len = 0;
     while len < 32768 && *path.add(len) != 0 {
         len += 1;
     }
-    String::from_utf16_lossy(std::slice::from_raw_parts(path, len))
+    if len == 32768 {
+        return Err("callback path too long".into());
+    }
+    // This diagnostic refuses non-UTF-8 names instead of collapsing two names.
+    String::from_utf16(std::slice::from_raw_parts(path, len))
+        .map(|s| s.replace('\\', "/"))
+        .map_err(|_| "diagnostic refuses unpaired surrogate path".into())
 }
 unsafe extern "system" fn start_enum(data: *const PRJ_CALLBACK_DATA, id: *const GUID) -> HRESULT {
     call(data, |d, s| {
-        if id.is_null() || d.FilePathName.is_null() {
+        if id.is_null() {
             return INVALID;
         }
-        if *d.FilePathName != 0 {
-            return NOT_FOUND;
+        let path = match path_text(d.FilePathName) {
+            Ok(p) => p,
+            Err(e) => return s.fail(e),
+        };
+        let listed = match s.source.lock() {
+            Ok(mut source) => source.list(&path),
+            Err(e) => return s.fail(e),
+        };
+        let listed = match listed {
+            Ok(v) => v,
+            Err(e) => return s.fail(e),
+        };
+        let mut entries = Vec::with_capacity(listed.len());
+        for entry in listed {
+            let basic = match s.basic(&entry) {
+                Ok(v) => v,
+                Err(e) => return s.fail(e),
+            };
+            entries.push((
+                entry.name.encode_utf16().chain([0]).collect::<Vec<_>>(),
+                basic,
+            ));
+        }
+        entries.sort_by(|(a, _), (b, _)| (s.api.compare)(a.as_ptr(), b.as_ptr()).cmp(&0));
+        if entries
+            .windows(2)
+            .any(|w| (s.api.compare)(w[0].0.as_ptr(), w[1].0.as_ptr()) == 0)
+        {
+            return s.fail("two Store names collide in ProjFS ordering");
         }
         let Ok(mut sessions) = s.enums.lock() else {
             return UNEXPECTED;
         };
-        sessions.insert(guid_key(&*id), false);
+        sessions.insert(guid_key(&*id), Enumeration { entries, at: 0 });
         0
     })
 }
@@ -126,42 +181,63 @@ unsafe extern "system" fn get_enum(
         let Ok(mut sessions) = s.enums.lock() else {
             return UNEXPECTED;
         };
-        let Some(done) = sessions.get_mut(&guid_key(&*id)) else {
+        let Some(session) = sessions.get_mut(&guid_key(&*id)) else {
             return INVALID;
         };
         if d.Flags & PRJ_CB_DATA_FLAG_ENUM_RESTART_SCAN != 0 {
-            *done = false;
+            session.at = 0;
         }
         s.enumeration_calls.fetch_add(1, Ordering::Relaxed);
-        if *done {
-            return 0;
+        while let Some((name, basic)) = session.entries.get(session.at) {
+            if !search.is_null() && !(s.api.matches)(name.as_ptr(), search) {
+                session.at += 1;
+                continue;
+            }
+            let result = (s.api.fill)(name.as_ptr(), basic, buffer);
+            if result == BUFFER_FULL {
+                return 0;
+            } // resume this exact entry next call
+            if result < 0 {
+                return result;
+            }
+            session.at += 1;
+            if d.Flags & PRJ_CB_DATA_FLAG_ENUM_RETURN_SINGLE_ENTRY != 0 {
+                break;
+            }
         }
-        if !search.is_null() && !(s.api.matches)(s.name.as_ptr(), search) {
-            *done = true;
-            return 0;
-        }
-        let result = (s.api.fill)(s.name.as_ptr(), &s.basic(), buffer);
-        // A full OS buffer is a continuation, not permission to lose the entry.
-        if result == BUFFER_FULL {
-            return 0;
-        }
-        if result >= 0 {
-            *done = true;
-        }
-        result
+        0
     })
 }
 unsafe extern "system" fn placeholder(data: *const PRJ_CALLBACK_DATA) -> HRESULT {
     call(data, |d, s| {
-        if !s.is_file(d.FilePathName) {
-            return NOT_FOUND;
-        }
+        let path = match path_text(d.FilePathName) {
+            Ok(p) => p,
+            Err(e) => return s.fail(e),
+        };
+        let source = match s.source.lock() {
+            Ok(v) => v,
+            Err(e) => return s.fail(e),
+        };
+        let entry = match source.entry(&path) {
+            Ok(Some(e)) => e,
+            Ok(None) => return NOT_FOUND,
+            Err(e) => return s.fail(e),
+        };
+        let basic = match s.basic(&entry) {
+            Ok(v) => v,
+            Err(e) => return s.fail(e),
+        };
         let mut info = PRJ_PLACEHOLDER_INFO {
-            FileBasicInfo: s.basic(),
+            FileBasicInfo: basic,
             ..Default::default()
         };
         info.VersionInfo.ProviderID[0] = 1;
-        info.VersionInfo.ContentID[0] = 1;
+        if let Some(saved) = source.store() {
+            info.VersionInfo.ContentID[..32].copy_from_slice(saved.root.as_bytes());
+        } else {
+            info.VersionInfo.ContentID[0] = 1;
+        }
+        drop(source);
         s.placeholder_calls.fetch_add(1, Ordering::Relaxed);
         (s.api.placeholder)(
             d.NamespaceVirtualizationContext,
@@ -177,49 +253,81 @@ unsafe extern "system" fn file_data(
     length: u32,
 ) -> HRESULT {
     call(data, |d, s| {
-        if !s.is_file(d.FilePathName) {
-            return NOT_FOUND;
-        }
+        let path = match path_text(d.FilePathName) {
+            Ok(p) => p,
+            Err(e) => return s.fail(e),
+        };
+        let mut source = match s.source.lock() {
+            Ok(v) => v,
+            Err(e) => return s.fail(e),
+        };
+        let entry = match source.entry(&path) {
+            Ok(Some(e)) if !e.directory => e,
+            Ok(_) => return NOT_FOUND,
+            Err(e) => return s.fail(e),
+        };
+        let size = match usize::try_from(entry.size) {
+            Ok(v) => v,
+            Err(_) => return INVALID,
+        };
         let mut info = PRJ_VIRTUALIZATION_INSTANCE_INFO::default();
         let result = (s.api.info)(d.NamespaceVirtualizationContext, &mut info);
         if result < 0 {
             return result;
         }
-        let Some((begin, end)) = read_window(offset, length, s.content.len(), info.WriteAlignment)
-        else {
+        let Some((mut begin, end)) = read_window(offset, length, size, info.WriteAlignment) else {
             return INVALID;
         };
-        if begin == end {
-            return 0;
+        let unit = info.WriteAlignment as usize;
+        let window = (1024 * 1024 / unit) * unit;
+        if window == 0 {
+            return INVALID;
         }
-        let count = end - begin;
-        let buffer = (s.api.allocate)(d.NamespaceVirtualizationContext, count);
-        if buffer.is_null() {
-            return NO_MEMORY;
-        }
-        // Aligned allocation is count bytes; the checked range is inside content.
-        std::ptr::copy_nonoverlapping(s.content[begin..end].as_ptr(), buffer as *mut u8, count);
-        let result = (s.api.data)(
-            d.NamespaceVirtualizationContext,
-            &d.DataStreamId,
-            buffer,
-            begin as u64,
-            count as u32,
-        );
-        (s.api.release)(buffer);
-        if result >= 0 {
-            s.read_calls.fetch_add(1, Ordering::Relaxed);
+        while begin < end {
+            let count = window.min(end - begin);
+            let bytes = match source.read(&path, begin as u64, count as u32) {
+                Ok(v) => v,
+                Err(e) => return s.fail(e),
+            };
+            if bytes.len() != count {
+                return s.fail("source range length mismatch");
+            }
+            let buffer = (s.api.allocate)(d.NamespaceVirtualizationContext, count);
+            if buffer.is_null() {
+                return NO_MEMORY;
+            }
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, count);
+            let result = (s.api.data)(
+                d.NamespaceVirtualizationContext,
+                &d.DataStreamId,
+                buffer,
+                begin as u64,
+                count as u32,
+            );
+            (s.api.release)(buffer);
+            if result < 0 {
+                return result;
+            }
             s.read_bytes.fetch_add(count as u64, Ordering::Relaxed);
+            begin += count;
         }
-        result
+        s.read_calls.fetch_add(1, Ordering::Relaxed);
+        0
     })
 }
 unsafe extern "system" fn query(data: *const PRJ_CALLBACK_DATA) -> HRESULT {
     call(data, |d, s| {
-        if s.is_file(d.FilePathName) {
-            0
-        } else {
-            NOT_FOUND
+        let path = match path_text(d.FilePathName) {
+            Ok(p) => p,
+            Err(e) => return s.fail(e),
+        };
+        match s.source.lock() {
+            Ok(source) => match source.entry(&path) {
+                Ok(Some(_)) => 0,
+                Ok(None) => NOT_FOUND,
+                Err(e) => s.fail(e),
+            },
+            Err(e) => s.fail(e),
         }
     })
 }
@@ -231,15 +339,37 @@ unsafe extern "system" fn notification(
     _parameters: *mut PRJ_NOTIFICATION_PARAMETERS,
 ) -> HRESULT {
     call(data, |d, s| {
+        let path = match path_text(d.FilePathName) {
+            Ok(p) => p,
+            Err(e) => return s.fail(e),
+        };
+        let dest = if destination.is_null() {
+            String::new()
+        } else {
+            match path_text(destination) {
+                Ok(p) => p,
+                Err(e) => return s.fail(e),
+            }
+        };
         let Ok(mut events) = s.notifications.lock() else {
             return UNEXPECTED;
         };
         if events.len() >= 1024 {
             s.notification_overflow.fetch_add(1, Ordering::Relaxed);
         } else {
-            events.push((kind, path_text(d.FilePathName), path_text(destination)));
+            events.push((kind, path, dest));
         }
-        // A diagnostic observes; it must not pretend this is Overlay persistence.
+        if s.readonly
+            && matches!(
+                kind,
+                PRJ_NOTIFICATION_PRE_DELETE
+                    | PRJ_NOTIFICATION_PRE_RENAME
+                    | PRJ_NOTIFICATION_PRE_SET_HARDLINK
+                    | PRJ_NOTIFICATION_FILE_PRE_CONVERT_TO_FULL
+            )
+        {
+            return 0x80070005u32 as i32; // before-effect access denied, never write Store
+        }
         0
     })
 }

@@ -2,5 +2,7 @@
 mod api;
 mod callbacks;
 mod instance;
+mod store_run;
 pub use api::ProbeError;
 pub use instance::{check, live};
+pub use store_run::live_store;

@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+#[cfg(windows)]
+mod child_store;
 use layerfs_projfs_probe::{seed, NAME};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -65,13 +67,22 @@ fn main() {
     }
     #[cfg(windows)]
     {
-        use layerfs_projfs_probe::windows::{check, live, ProbeError};
+        if args.len() == 2 && args[0] == "store-child" {
+            if let Err(error) = child_store::run(Path::new(&args[1])) {
+                eprintln!("STORE_CHILD_FAIL {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        use layerfs_projfs_probe::windows::{check, live, live_store, ProbeError};
         let result = if args.len() == 1 && args[0] == "check" {
             check()
         } else if args.len() == 2 && args[0] == "live" {
             live(Path::new(&args[1]))
+        } else if args.len() == 2 && args[0] == "store-live" {
+            live_store(Path::new(&args[1]))
         } else {
-            eprintln!("usage: layerfs-projfs-probe check | live <new-absolute-root>");
+            eprintln!("usage: layerfs-projfs-probe check | live <new-absolute-root> | store-live <new-absolute-root>");
             std::process::exit(1);
         };
         if let Err(error) = result {

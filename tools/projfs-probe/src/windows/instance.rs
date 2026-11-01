@@ -1,7 +1,7 @@
 //! Namespace ownership and a bounded external-process proof.
 use super::api::{empty_path, failed, hr, wide, Api, Result};
 use super::callbacks::{self, State};
-use crate::{seed, NAME};
+use crate::{seed, source::Source, NAME};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr::{null, null_mut};
@@ -19,7 +19,7 @@ pub fn check() -> Result<()> {
     println!("API_LOAD_OK live_mount_verified=false exports=12");
     Ok(())
 }
-fn new_root(path: &Path) -> Result<PathBuf> {
+pub(super) fn new_root(path: &Path) -> Result<PathBuf> {
     if !path.is_absolute() {
         return Err(failed("live root must be absolute"));
     }
@@ -76,15 +76,15 @@ fn new_root(path: &Path) -> Result<PathBuf> {
     }
     Ok(parent.join(name))
 }
-struct Namespace {
-    state: Box<State>,
+pub(super) struct Namespace {
+    pub state: Box<State>,
     handle: PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT,
     _callbacks: Box<PRJ_CALLBACKS>,
     _mapping: Box<PRJ_NOTIFICATION_MAPPING>,
     _notification_root: Box<[u16; 1]>,
 }
 impl Namespace {
-    fn start(api: Api, root: &Path) -> Result<Self> {
+    pub(super) fn start(api: Api, root: &Path, source: Source) -> Result<Self> {
         let root_wide = wide(root)?;
         let mut id = GUID::default();
         // CoCreateGuid needs no COM apartment and fills this caller-owned GUID.
@@ -98,7 +98,7 @@ impl Namespace {
             unsafe { (api.mark)(root_wide.as_ptr(), empty_path(), null(), &id) },
             "PrjMarkDirectoryAsPlaceholder",
         )?;
-        let state = Box::new(State::new(api, seed()));
+        let state = Box::new(State::new(api, source));
         let table = Box::new(callbacks::table());
         let notification_root = Box::new([0u16; 1]);
         let mut mapping = Box::new(PRJ_NOTIFICATION_MAPPING {
@@ -107,6 +107,7 @@ impl Namespace {
                 | PRJ_NOTIFY_FILE_OVERWRITTEN
                 | PRJ_NOTIFY_PRE_DELETE
                 | PRJ_NOTIFY_PRE_RENAME
+                | PRJ_NOTIFY_PRE_SET_HARDLINK
                 | PRJ_NOTIFY_FILE_RENAMED
                 | PRJ_NOTIFY_FILE_HANDLE_CLOSED_FILE_MODIFIED
                 | PRJ_NOTIFY_FILE_HANDLE_CLOSED_FILE_DELETED
@@ -142,7 +143,7 @@ impl Namespace {
         )?;
         Ok(namespace)
     }
-    fn stop(&mut self) {
+    pub(super) fn stop(&mut self) {
         if !self.handle.is_null() {
             unsafe {
                 (self.state.api.stop)(self.handle);
@@ -165,9 +166,9 @@ impl Drop for Namespace {
         self.stop();
     }
 }
-fn child(root: &Path) -> Result<()> {
+pub(super) fn child(root: &Path, mode: &str) -> Result<()> {
     let mut child = Command::new(std::env::current_exe().map_err(failed)?)
-        .arg("child")
+        .arg(mode)
         .arg(root)
         .env("LAYERFS_PROJFS_PROBE_CHILD_ROOT", root)
         .stdin(Stdio::null())
@@ -203,9 +204,9 @@ pub fn live(path: &Path) -> Result<()> {
     // Missing component is a before-effect refusal: no test directory exists yet.
     let api = Api::load()?;
     let root = new_root(path)?;
-    let mut namespace = Namespace::start(api, &root)?;
+    let mut namespace = Namespace::start(api, &root, Source::Fixture(seed()))?;
     println!("PROJECTION_STARTED {}", root.display());
-    let work = child(&root);
+    let work = child(&root, "child");
     // Surface full-file/tombstone observations before closing the provider.
     let renamed = namespace.state_of(&root.join("renamed.txt"));
     println!("FILE_STATE renamed.txt {renamed:?}");

@@ -2,12 +2,17 @@
 
 > Status: Experimental diagnostic; not a product contract or Workspace implementation.
 
-An isolated, single-file projection serves 96 KiB of deterministic bytes on demand.
-A separately spawned native process enumerates, reads, writes, renames and deletes
-inside a fresh directory. The provider records notification counts and drains
-callbacks before releasing its state. Roots are always retained, including failures.
-The tool uses only the already-pinned windows-sys dependency and dynamically loads
-ProjectedFSLib from System32, so absent ProjFS produces an explicit refusal.
+Two bounded experiments share the same ProjFS callbacks. `live` serves a 96 KiB
+fixed sample and exercises local mutations. `store-live` creates a new Disposable
+LayerFS Store, pins one published root, and reads directory metadata and binary
+ranges through public Persistence/Storage/Content ports. It then advances the
+Branch with a separate normal Store call and verifies the projection still reads
+the pinned version. Original input is retained at a different path, never used
+by callbacks. Roots and failures are retained.
+
+The tool uses existing first-party libraries and windows-sys 0.61.2; registry
+versions/checksums in its independent lock match the product lock. ProjFS is
+dynamically loaded only from System32, so absent components refuse explicitly.
 
 Build first, then run each test invocation with a wall timeout <=120 seconds:
 
@@ -31,8 +36,10 @@ Exit 0: the selected probe passed. Exit 2: ProjFS unavailable. Exit 1: failed pr
 or invalid input. The live child has a 15-second bound; run the provider itself
 under an explicit <=120-second wall timeout too. Never reuse a failed root.
 
-This proves neither LayerFS Store integration nor capture-to-Commit. Hydrated/full
-files live on NTFS and notifications alone cannot establish a stable capture frontier.
+The `live` mode alone proves no Store integration. The `store-live` mode proves
+only a pinned read-only Store source for this fixture, not a writable Workspace
+or capture-to-Commit. Hydrated/full files live on NTFS; notifications do not
+establish a stable Overlay frontier.
 No Docker, WSL, Windows feature installation, mount on an existing project, or host
 restart is performed. Do not label compilation or unit tests as a live mount PASS.
 
@@ -52,3 +59,32 @@ it now tests an overflowing length from inside the range and separately asserts 
 The original failure is retained in the issue-352 test receipts.
 
 Live result and exact limits: [2026-11-01 probe record](../../core/docs/issues/352/PROJFS-PROBE-2026-11-01.md).
+
+## Real Store read projection
+
+```powershell
+tmp/projfs-probe-target/debug/layerfs-projfs-probe.exe store-live D:/workspace/layerfs/tmp/store-projection-<unique>
+node tools/projfs-probe/tests/store-smoke.mjs tmp/projfs-probe-target/debug/layerfs-projfs-probe.exe tmp/store-proof-<unique>
+```
+
+The source is a read-only SQLite session using explicit Disposable/WAL/OFF.
+Opening a pin reads a small metadata root, not zero physical I/O. Before ordinary
+file access, directory-list and file-range counters must remain zero. The live
+proof checks 80 directory names (crossing the 64-row Content page), nested binary
+ranges, a Unicode name and an empty file. It leaves a 2 MiB file unrequested and
+unmaterialized. OS read-ahead may hydrate the **entire opened file**: four small
+application reads do not imply four small provider reads or a cold-cache claim.
+
+Read-only refers to the Store source, not a security sandbox. Projected existing
+file writes/rename/delete are refused, but new local NTFS files are allowed and
+retained; the test verifies they do not enter the Store. This is not writeback.
+The separately advanced Branch is an ordinary `files::commit` used to challenge
+pin stability, never claimed as Commit of projected changes.
+
+Diagnostic limits: up to 1024 entries per listed directory, up to 1 MiB per Content
+range read (larger callback demands are chunked), one source mutex, 1024 notification
+records. Reaching a bound fails rather than truncates. This slice supports exact
+UTF-8 spellings, regular files and directories. Symlinks, unpaired surrogates,
+Win32-special names and duplicate ProjFS ordering refuse; case aliasing, hard-link
+semantics, GC under concurrent ownership and general repository projection are
+not qualified. No root/API/engine files or manifests are changed.
