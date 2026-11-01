@@ -16,7 +16,11 @@
 > platform module (`api/runtime/src/platform/native-windows`) chosen by the
 > integration's `route: native` setting since 2026-11-01, and the state of
 > that integration — including the open Workspace-on-Windows question — is in
-> [HANDOFF-2026-11-01.md](HANDOFF-2026-11-01.md).
+> [HANDOFF-2026-11-01.md](HANDOFF-2026-11-01.md). The follow-up
+> [ProjFS feasibility boundary](WINDOWS-WORKSPACE-PROJFS-RESEARCH.md) separates
+> component availability from a live Workspace proof; the
+> [native-route verifier](../../../../tools/verification/native-route/README.md)
+> keeps Store correctness and Workspace readiness as different leaves.
 
 ## 1. Architecture
 

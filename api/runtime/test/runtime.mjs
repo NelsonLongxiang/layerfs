@@ -28,6 +28,7 @@ async function opened(docker = () => "", settings = {}) {
   return { runtime, calls };
 }
 const project = (name) => { mkdirSync(join(home, name), { recursive: true }); writeFileSync(join(home, name, "project.record"), "x"); };
+let skipped = false;
 
 try {
   if (selected === "surface") {
@@ -61,6 +62,9 @@ try {
     await runtime.close();
     await assert.rejects(runtime.project.list(), { code: "InvalidInput", message: /closed/ });
     assert.throws(() => runtime.events.subscribe(), { code: "InvalidInput" });
+  } else if (selected === "home-mode" && process.platform === "win32") {
+    skipped = true;
+    console.log("SKIP runtime/home-mode: POSIX mode bits are not Windows DACLs; run this case on Unix");
   } else if (selected === "home-mode") {
     const { resolveSettings } = await import("../src/settings.js");
     const mode = (dir) => statSync(dir).mode & 0o777;
@@ -124,7 +128,7 @@ try {
     assert.equal(calls[0].join(" "), `volume create --label layerfs.role=store --label layerfs.home=${home} --label layerfs.project=shop ${calls[0].at(-1)}`);
     assert.match(calls[0].at(-1), /^layerfs-shop-store-[0-9a-z]+$/);
     const init = native.args[native.calls.lastIndexOf("project.init")];
-    assert.deepEqual([init.path, init.name, init.storePath, init.deploy.volume], [source, "shop", join(work, "volumes", calls[0].at(-1), "_data/global/store.sqlite"), calls[0].at(-1)]);
+    assert.deepEqual([init.path, init.name, join(init.storePath), init.deploy.volume], [source, "shop", join(work, "volumes", calls[0].at(-1), "_data/global/store.sqlite"), calls[0].at(-1)]);
     assert.equal((await runtime.project.list()).find((p) => p.name === "shop").volume, calls[0].at(-1));
     assert.equal(init.timeoutMs, 300_000, "no timeout: LayerFS.init's 300 s default, none of the runtime's own");
     // a timeout passes through to LayerFS.init as timeoutMs; the record keeps none
@@ -436,8 +440,10 @@ try {
     const { resolveSettings } = await import("../src/settings.js");
     const user = join(work, "user"), desktop = join(user, ".docker", "run", "docker.sock");
     mkdirSync(join(user, ".docker", "run"), { recursive: true });
-    const saved = process.env.HOME;
-    process.env.HOME = user;
+    // os.homedir() reads USERPROFILE on Windows and HOME on Unix.
+    const homeVariable = process.platform === "win32" ? "USERPROFILE" : "HOME";
+    const saved = process.env[homeVariable];
+    process.env[homeVariable] = user;
     try {
       const docker = (platform, given = {}) => resolveSettings({ home, platform, ...given }).docker;
       assert.equal(docker("macos"), "/var/run/docker.sock", "no socket at either path: the usual one");
@@ -448,7 +454,8 @@ try {
       assert.equal(docker("macos", { docker: "/given.sock" }), "/given.sock", "a given socket wins");
       console.log(`docker-default: macOS default is ${fallback === desktop ? "Docker Desktop's socket (/var/run/docker.sock absent)" : "/var/run/docker.sock (present here)"}`);
     } finally {
-      process.env.HOME = saved;
+      if (saved === undefined) delete process.env[homeVariable];
+      else process.env[homeVariable] = saved;
     }
   } else if (selected === "worker-docker") {
     // the worker client replaces a call's deploy.docker with the endpoint's
@@ -505,4 +512,4 @@ try {
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
-console.log(`PASS runtime/${selected}`);
+if (!skipped) console.log(`PASS runtime/${selected}`);

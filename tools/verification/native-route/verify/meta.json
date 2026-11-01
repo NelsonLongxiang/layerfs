@@ -1,0 +1,40 @@
+{
+  "meta_index_version": 2,
+  "specs": [
+    {
+      "file": "verify/specs/spec_9c8f3b98db86.json",
+      "sha256": "b1600696eb8bd8b71097d0757e04d9b242fcfa267fb73901676f055f2a9eb617"
+    },
+    {
+      "file": "verify/specs/spec_04bcdb7fdf40.json",
+      "sha256": "0e96fe4fb337eccdb04fb7b1c82d6638bbb43818b43ab8a939a34cfd9e0381c2"
+    }
+  ],
+  "orchestration": [],
+  "tooling": [
+    {
+      "path": "tools/collect.mjs",
+      "sha256": "65af4b6a04b7fc4fc08af7a7664e007c6832ec63cb3a38dfbf700bfb37be12f2",
+      "role": "test"
+    }
+  ],
+  "lineage_anchors_required": true,
+  "reregistrations": [
+    {
+      "path": "tools/collect.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "8a784a07672ed8638448f2a7e8d7f5bc4c1055744a1f09b5fc532c3512a11391",
+      "reason": "Initial registration before first commit: native route isolated command receipt collector; never invokes verify or touches live host.",
+      "at": "2026-11-01T09:41:19.559Z",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra"
+    },
+    {
+      "path": "tools/collect.mjs",
+      "old_sha256": "8a784a07672ed8638448f2a7e8d7f5bc4c1055744a1f09b5fc532c3512a11391",
+      "new_sha256": "65af4b6a04b7fc4fc08af7a7664e007c6832ec63cb3a38dfbf700bfb37be12f2",
+      "reason": "Before first commit: Linux uses exact commit git archive, excluding host node_modules and Windows links.",
+      "at": "2026-11-01T09:42:26.944Z",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra"
+    }
+  ]
+}

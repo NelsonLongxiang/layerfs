@@ -26,11 +26,11 @@ import { pathToFileURL } from "node:url";
 
 const results = [];
 const check = (name, ok, detail = "") => {
-  results.push([name, ok]);
+  results.push([name, ok ? "PASS" : "FAIL"]);
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`);
 };
 const skip = (name, why) => {
-  results.push([name, true]); // a skip is not a failure, but it is printed
+  results.push([name, "SKIP"]); // not a failure, and never counted as a pass
   console.log(`SKIP  ${name}  — ${why}`);
 };
 
@@ -77,7 +77,7 @@ async function sdk() {
     const onMain = await layerfs.fs.read("main", "/nested/applied.md");
     check("main carries the published tree", (onMain.text ?? onMain.content) === "applied\n");
 
-    let refusing = true;
+    let refusing = false;
     try {
       await layerfs.fs.write("main", "/direct.md", "no\n", "must be refused");
     } catch (error) {
@@ -139,6 +139,7 @@ function host() {
 await sdk();
 host();
 
-const failed = results.filter(([, ok]) => !ok).length;
-console.log(failed ? `\n${failed} FAILED` : "\nALL PASS");
+const count = (status) => results.filter(([, result]) => result === status).length;
+const failed = count("FAIL");
+console.log(`\n${count("PASS")} PASS, ${failed} FAIL, ${count("SKIP")} SKIP`);
 process.exit(failed ? 1 : 0);
