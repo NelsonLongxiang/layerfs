@@ -16,6 +16,29 @@ description: Use when building, editing, testing or inspecting a project through
 Your project lives in LayerFS, not on your local disk. You read and change it through
 the SDK, from small Node scripts you run with `node`.
 
+## Which calls this route serves
+
+Ask before you plan Sandboxes or builds: a route serves either all of the SDK or only
+its Store face.
+
+| Route | Calls that work | Calls that answer `Unsupported` |
+| --- | --- | --- |
+| Linux, Store opened in your process | all | — |
+| Worker on a Linux host (macOS; Windows with `LAYERFS_WORKER_ENDPOINT`) | all | — |
+| **Windows-native Store** (Windows, no worker endpoint) | `project`, `fs`, `branch` — including `fs.write`, `fs.apply`, `fs.edit`, `branch.fork/merge/publish` | `sandbox.*`, `workspace.*`, `project.list_sandboxes` |
+
+On the Windows-native route the refusal is one line and names the route:
+
+```
+Unsupported: … needs a daemon; the Windows-native Store route serves project, fs and branch calls in-process
+```
+
+There is no Workspace there, so nothing can be built, tested or executed; every change
+is a Commit you make directly with `fs.write`, `fs.apply` or `fs.edit`, and `main`
+moves only through `branch.publish`. Plan the work that way instead of mounting a
+Workspace, and do not retry a refused call: the route never grows the missing family
+in that session.
+
 ## Inside an integration: start here
 
 An integration is a host that runs you with a LayerFS project already set up. When it
