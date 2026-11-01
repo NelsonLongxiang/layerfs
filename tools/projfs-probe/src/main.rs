@@ -74,6 +74,13 @@ fn main() {
             }
             return;
         }
+        if args.len() == 2 && args[0] == "verify-commits" {
+            if let Err(error) = layerfs_native_probe::commit_reopen::verify(Path::new(&args[1])) {
+                eprintln!("REOPEN_COMMIT_FAIL {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
         use layerfs_native_probe::windows::{
             capture_child, capture_live, check, live, live_store, namespace_child, namespace_live,
             ProbeError,

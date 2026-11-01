@@ -169,7 +169,7 @@ Build this library/CLI as above, then the native host using ../winfsp-build.ps1.
 Run (from repository root) under a <=120-second ceiling:
 
 ```powershell
-node tools/winfsp-smoke.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <fresh-output>
+node tools/winfsp-smoke.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <target>/debug/layerfs-projfs-probe.exe <fresh-output>
 ```
 
 The ordinary Windows process reads an existing Store file, writes/reads 300KB
@@ -190,7 +190,19 @@ before production. The existing Mutation reply-attempt boundary is reused; full
 native callback reply/capture ordering is not claimed by the sequential proof.
 Unknown owner errors latch refusal and retain custody instead of cleanup/replay.
 
-The explicit diagnostic capture resolves without history publication during final
-close; it is not a Commit or failed product Commit. No fs.apply, re-Init after
-mutation, native-tree scan/copy, manual SQL or alternate content encoding is used.
-Save/History/Commit and product W2/W3/W4 qualification remain separate work.
+The independent diagnostic capture is explicitly released/resolved with no history
+publication. Then commit_captured takes its own new capture and runs the existing
+CapturedNamespace -> Save::finish -> History -> local install. Two real Commits are
+read back by History id while native descriptors stay open across publication;
+a later write and a new file appear only in the second immutable snapshot. An
+unchanged third call must return UpToDate without adding a Commit. After the
+provider exits, the supplied checker process reopens the Store read-only and
+checks both versions' exact sizes/bytes, parent relation, via=Workspace, head and
+unchanged base directory membership. This is a read-only Store reopen, not a
+second native mount or a power-loss proof.
+
+No fs.apply, re-Init after mutation, native-tree scan/copy, manual SQL or alternate
+content encoding is used. A failed Commit retains its exact original failure;
+a failed post-publication audit retains the known success receipt too. The host
+never retries an uncertain publication. Product Workspace API, concurrent Commit,
+mapped writes and full-repository qualification remain NOT_RUN.

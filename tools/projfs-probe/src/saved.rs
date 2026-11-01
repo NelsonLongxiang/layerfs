@@ -11,7 +11,7 @@ use layerfs_content::{
     object::inode_leaf::{InodeKind, InodeValue},
     ObjectId,
 };
-use layerfs_history::{BranchId, HistoryCatalog};
+use layerfs_history::{BranchId, CommitId, HistoryCatalog};
 use layerfs_persistence::{Handles, PersistenceConfig, SqlitePersistenceProfile};
 use layerfs_storage::{Diagnostics, Storage};
 use layerfs_telemetry::timer::Timing;
@@ -53,7 +53,30 @@ impl Saved {
             .branch_snapshot(branch)
             .map_err(error)?
             .ok_or("branch absent")?;
-        let root = snapshot.effective_root;
+        Self::at_root(handles, snapshot.effective_root)
+    }
+    /// Reopen an actual immutable Commit through History, not a caller-invented root.
+    pub fn open_commit(
+        path: &Path,
+        binding: &[u8],
+        key: [u8; 32],
+        commit: CommitId,
+    ) -> Result<Self> {
+        let handles = Handles::open_read_only(
+            PersistenceConfig::sqlite(path)
+                .with_sqlite_profile(SqlitePersistenceProfile::Disposable),
+            binding,
+            key,
+        )
+        .map_err(error)?;
+        let record = handles
+            .history
+            .commit(commit)
+            .map_err(error)?
+            .ok_or("Commit absent")?;
+        Self::at_root(handles, record.root)
+    }
+    fn at_root(handles: Handles, root: ObjectId) -> Result<Self> {
         let storage = Storage::new(handles.storage.clone()).map_err(error)?;
         let tree = TreeTable::open(&storage.reader().map_err(error)?, FilesystemRootId(root))
             .map_err(error)?;

@@ -42,6 +42,10 @@ struct Bridge {
   (PCWSTR, UINT32, PWSTR, UINT32, UINT32 *, Stat *) = nullptr;
   INT32(__cdecl *capture)() = nullptr;
   INT32(__cdecl *captured)(PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *release_capture)() = nullptr;
+  INT32(__cdecl *commit)(UINT32 *) = nullptr;
+  INT32(__cdecl *committed)
+  (UINT32, PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *observe)() = nullptr;
   INT32(__cdecl *finish)() = nullptr;
 } bridge;
@@ -406,6 +410,9 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, next, lf_next);
   LOAD(bridge, capture, lf_capture);
   LOAD(bridge, captured, lf_captured);
+  LOAD(bridge, release_capture, lf_release_capture);
+  LOAD(bridge, commit, lf_commit);
+  LOAD(bridge, committed, lf_committed);
   LOAD(bridge, observe, lf_observe);
   LOAD(bridge, finish, lf_finish);
 #undef LOAD
@@ -460,6 +467,7 @@ int wmain(int argc, wchar_t **argv) {
   if (status >= 0)
     status = api.start(fs, 2);
   bool done = false, captured = false, checked = false;
+  bool committed1 = false, committed2 = false, unchanged = false;
   if (status >= 0 && mark(argv[3], L"ready")) {
     puts("NATIVE_OVERLAY_READY");
     fflush(stdout);
@@ -486,6 +494,56 @@ int wmain(int argc, wchar_t **argv) {
         if (!mark(argv[3], L"capture-checked"))
           break;
       }
+      if (checked && !committed1 && exists(argv[3], L"commit-one")) {
+        UINT32 changed = 0;
+        if (bridge.release_capture() < 0 || bridge.commit(&changed) < 0 ||
+            changed != 1)
+          break;
+        BYTE bytes[128]{};
+        UINT32 count = 0;
+        constexpr char expected[] = "after! capture";
+        if (bridge.committed(0, L"\\capture.txt", 12, bytes, sizeof(bytes),
+                             &count) < 0 ||
+            count != sizeof(expected) - 1 || memcmp(bytes, expected, count))
+          break;
+        committed1 = true;
+        puts("NATIVE_COMMIT_ONE_PASS reopened_history=true via=Workspace");
+        if (!mark(argv[3], L"committed-one"))
+          break;
+      }
+      if (committed1 && !committed2 && exists(argv[3], L"commit-two")) {
+        BYTE old[128]{};
+        UINT32 old_count = 0;
+        constexpr char before[] = "after! capture";
+        if (bridge.committed(0, L"\\capture.txt", 12, old, sizeof(old),
+                             &old_count) < 0 ||
+            old_count != sizeof(before) - 1 || memcmp(old, before, old_count))
+          break;
+        UINT32 changed = 0;
+        if (bridge.commit(&changed) < 0 || changed != 1)
+          break;
+        BYTE bytes[128]{};
+        UINT32 count = 0;
+        constexpr char expected[] = "final! capture";
+        if (bridge.committed(1, L"\\capture.txt", 12, bytes, sizeof(bytes),
+                             &count) < 0 ||
+            count != sizeof(expected) - 1 || memcmp(bytes, expected, count))
+          break;
+        committed2 = true;
+        puts("NATIVE_COMMIT_TWO_PASS earlier_snapshot_stable=true "
+             "later_write_published=true");
+        if (!mark(argv[3], L"committed-two"))
+          break;
+      }
+      if (committed2 && !unchanged && exists(argv[3], L"commit-unchanged")) {
+        UINT32 changed = 1;
+        if (bridge.commit(&changed) < 0 || changed != 0)
+          break;
+        unchanged = true;
+        puts("NATIVE_COMMIT_UPTODATE_PASS new_commit=false");
+        if (!mark(argv[3], L"committed-unchanged"))
+          break;
+      }
       if (exists(argv[3], L"stop")) {
         done = true;
         break;
@@ -507,10 +565,11 @@ int wmain(int argc, wchar_t **argv) {
     FreeLibrary(bridge.dll);
     FreeLibrary(api.dll);
   } // failure keeps original Rust owner state until process ends
-  puts("NOT_RUN Save History product_Workspace mapped_lifecycle "
+  puts("NOT_RUN product_Workspace concurrent_commit mapped_lifecycle "
        "full_repository");
-  return done && captured && checked && closed == 0 && !callback_error &&
-                 creates && reads && writes && renames && deletes
+  return done && captured && checked && committed1 && committed2 && unchanged &&
+                 closed == 0 && !callback_error && creates && reads && writes &&
+                 renames && deletes
              ? 0
              : 1;
 }

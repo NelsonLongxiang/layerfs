@@ -250,6 +250,43 @@ pub unsafe extern "C" fn lf_captured(
     })
 }
 #[no_mangle]
+pub extern "C" fn lf_release_capture() -> i32 {
+    call(|s| s.release_capture())
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_commit(changed: *mut u32) -> i32 {
+    call(|s| {
+        if changed.is_null() {
+            return Err(failed("null commit output"));
+        }
+        let value = s.commit()?;
+        unsafe { put(changed, u32::from(value)) }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_committed(
+    index: u32,
+    ptr: *const u16,
+    len: u32,
+    out: *mut u8,
+    capacity: u32,
+    length: *mut u32,
+) -> i32 {
+    call(|s| {
+        if out.is_null() || length.is_null() {
+            return Err(failed("null Commit read output"));
+        }
+        let bytes = s.committed_bytes(index as usize, &unsafe { path(ptr, len) }?)?;
+        if bytes.len() > capacity as usize {
+            return Err(failed("Commit read output capacity"));
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
+            put(length, bytes.len() as u32)
+        }
+    })
+}
+#[no_mangle]
 pub extern "C" fn lf_observe() -> i32 {
     call(|s| s.observe())
 }
