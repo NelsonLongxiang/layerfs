@@ -1,6 +1,6 @@
 # Native-route verification
 
-> Status: Current verifier for the Windows Store route; Workspace readiness is a separate, intentionally non-green leaf until proved.
+> Status: Current verifier for retained Windows Store, projection and native diagnostic evidence; historical Workspace readiness remains separate from product qualification.
 
 Extends the historical `spec_9a8d135fb270` four-writer scenario. Its material, reports and archives remain untouched; no old run is relabelled as current.
 
@@ -44,7 +44,7 @@ Repeat submit/prepare/run for `workspace.md`, `workspace-candidates.json`, and `
 ## Scope and counterexamples
 
 - Store: ten Windows runtime cases, explicit POSIX-only SKIP, real SDK operations and refusals, two report regressions, three Linux comparison cases, identity and receipt completeness.
-- Readiness: ProjFS availability, live ordinary-process filesystem use, stable capture-to-one-Commit and open-handle/mapping lifetime proofs. Only the preflight is implemented here; the three live proof rows are NOT_RUN.
+- Historical readiness: ProjFS availability plus three live proof rows remain frozen at their original collection time. The newer native diagnostic leaf records subsequent WinFsp progress without rewriting these rows or claiming product SDK qualification.
 - For each criterion, create a new snapshot copy and change/remove the exact fact it needs; never mutate the actual snapshot, frozen spec, report, or source Store. Empty snapshots must not pass.
 - reviews.json is author self-review, not a claim of independent human arbitration. Public test assertions and negative snapshots provide mechanical validation.
 - The Linux image is pinned in the collector and must already exist locally. Network is disabled and source bind-mounted read-only. It is a cross-check, never the product runtime.
@@ -114,3 +114,48 @@ The fixed entry is temporary orchestration, registered as invoke with a 0.119.0 
 The former 0.118.0 STALE archives are deliberately retained and still rejected.
 A clean candidate workspace self-check does not make the default workspace
 containing those historical invalid bytes green; its report must remain honest.
+
+## Native WinFsp diagnostic evidence
+
+[native.md](materials/native.md) adds nine independent criteria for retained native
+mutation/Commit, same-Store remount, explicit guarantee scope, one controlled
+concurrent-write interleaving, normal close admission, identity and raw evidence.
+The [importer](tools/native.mjs) copies a closed Store/projection baseline into a
+new snapshot, embedding fifteen original JSON receipts plus its import manifest.
+It does not mount, write a Store, rebuild a binary, or rerun a product test.
+
+The importer checks current retained executable bytes against the receipt hashes,
+the declared source commit and tested subtree, host build receipt, Commit ancestry
+and independent reopen, generation/revision changes and close ordering. Its audit
+recomputes every derived field, embedded hash and all original baseline table
+hashes. It reuses the existing cache and close analyzers, now import-safe; their
+native CLI behavior is unchanged. An archived audit needs only the snapshot and
+validator, not the original machine's binary paths. Import itself still requires
+those retained binaries for the initial byte check; it never substitutes others.
+
+```powershell
+node tools/verification/native-route/tools/native.mjs <closed-baseline.sqlite> <native-proof-directory> <full-tested-source-commit> <fresh-output>
+node tools/verification/native-route/tools/native.mjs --audit <fresh-output>/snapshot.sqlite
+node tools/verification/native-route/tools/native-test.mjs <fresh-output>/snapshot.sqlite
+```
+
+Use the fixed engine and explicit isolated home for submit/prepare/run as above.
+The [four-leaf tree](materials/tree-native.json) pins the round-70 snapshot; it is
+mixed-source evidence, not a fresh single-commit product qualification. Preserve
+each source and its original read time. The historical Workspace leaf is named
+accordingly: its FAIL does not deny later diagnostic capabilities, and native
+9/9 does not turn product Workspace into a supported API. Frozen historical
+specs/reports remain untouched; only a new material/target can select new facts.
+
+Final checks: 37 parser/audit controls (including 35 corruptions), 36 synthetic
+criterion cases (three positive fixtures, 33 negatives), and existing cache/close
+analyzer self-tests. Synthetic positives test predicates only. Four leaf archives
+carry materials and the full snapshot; each extracted snapshot is byte-equal and
+re-audited. The aggregate keeps the engine's normal report/spec archive. See the
+[round-70 report](../../../core/docs/issues/352/NATIVE-VERIFIER-WINFSP-2026-11-02.md).
+
+SQL PASS checks derived facts, not provenance on its own. Run raw audit before
+verification and after extraction. Neither hashes nor local unsigned archives
+prove an arbitrary producer truthful or provide source-to-binary build attestation.
+General callbacks, complete kernel section inventory, mapped-page synchronization,
+crash recovery, sandbox/UI integration and product SDK Workspace remain unqualified.

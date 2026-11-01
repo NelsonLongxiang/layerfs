@@ -4,7 +4,8 @@ import {spawn,spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
-function analyze(provider,application){
+import {fileURLToPath} from 'node:url';
+export function analyze(provider,application){
  assert.match(application,/CACHE_CLIENT_PASS stages=8 .*flush_api_called=false/);
  assert.match(provider,/errors=0/);assert.match(provider,/OVERLAY_STATE .*handles=0/);
  const phases=[...provider.matchAll(/CACHE_PHASE phase=(\d+) application=(\d+) published_before=(\d+) published_after=(\d+) committed=(\d+) commit_changed=(\d+) writes=(\d+) constrained=(\d+) cleanup=(\d+) close=(\d+)/g)].map(m=>Object.fromEntries(['phase','application','published_before','published_after','committed','commit_changed','writes','constrained','cleanup','close'].map((k,i)=>[k,Number(m[i+1])])));
@@ -38,6 +39,7 @@ function analyze(provider,application){
  }
  return {phases,mappingGap:phases.some(p=>p.phase>=3&&p.phase<=6&&p.application>p.published_after),committedGap:phases.some(p=>p.phase>=3&&p.phase<=6&&p.application>p.committed),delayedConstrainedWritesAfterCleanup:afterCleanup};
 }
+if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
 if(process.argv[2]==='--self-test'){
  const raw=JSON.parse(readFileSync(resolve(process.argv[3]),'utf8'));const p=raw.provider.stdout,a=raw.application.stdout;
  analyze(p,a);console.log('PASS analyze actual cache receipt');
@@ -94,3 +96,4 @@ try{
  console.log(JSON.stringify({status:'PASS',...analysis,conclusion:'native mapping observations captured; not complete mapping qualification'},null,2));
 }catch(e){failure=String(e);for(const p of [application,provider]){if(p&&p.child.exitCode===null&&!p.child.killed)p.child.kill();}await Promise.all([application?.ended,provider.ended]);throw e;}
 finally{clearTimeout(timer);writeFileSync(join(out,'result.json'),JSON.stringify({status:failure?'FAIL':'PASS',identity,failure,provider:provider.item,application:application?.item??null,workspace_qualified:false},null,2));}
+}

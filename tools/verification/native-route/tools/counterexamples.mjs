@@ -49,11 +49,26 @@ const projection = {
   P8: "DELETE FROM projection_artifacts WHERE name='store-live'",
   empty: "DELETE FROM projection; DELETE FROM projection_artifacts",
 };
+const native = {
+  positive: "",
+  N1: "UPDATE native SET identity_checked=0",
+  N2: "UPDATE native SET mutation_reopen_exact=0",
+  N3: "UPDATE native SET remount_new_commits=1",
+  N4: "UPDATE native SET scope_refusals=7",
+  N5: "UPDATE native SET later_revision=capture_revision",
+  N6: "UPDATE native SET close_ordered=0",
+  N7: "UPDATE native SET workspace_qualified=1",
+  N8: "DELETE FROM native_artifacts WHERE name='close'",
+  N9: "UPDATE native SET rust_passes=14",
+  empty: "DELETE FROM native; DELETE FROM native_artifacts",
+};
 const fixtures = [];
 const groups = [["store", store], ["workspace", workspace]];
 const probe = new DatabaseSync(source, { readOnly: true });
 const hasProjection = !!probe.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='projection'").get();
+const hasNative = !!probe.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='native'").get();
 probe.close();
+if (hasNative) groups.push(["native", native]);
 if (hasProjection) groups.push(["projection", projection]);
 for (const [group, cases] of groups) {
   for (const [name, mutation] of Object.entries(cases)) {

@@ -1,0 +1,45 @@
+{
+  "tree_spec_id": "ts_layerfs_native_diagnostics_20261102_r70",
+  "tree_spec_version": 1,
+  "title": "Retained evidence: Store, projection, native diagnostic slices, historical Workspace readiness",
+  "root": "native-evidence",
+  "target": {
+    "kind": "sqlite-snapshot",
+    "id": "snapshot.sqlite",
+    "sha256": "sha256:1a69b4c97d9424a4643abe9b5b7a299ec7fe8763eb9535cc61e3c01675b09593"
+  },
+  "engine_version": "0.118.0",
+  "nodes": [
+    {
+      "id": "store-evidence",
+      "kind": "leaf",
+      "spec_id": "spec_c4f2f3fe21d2"
+    },
+    {
+      "id": "projection-read",
+      "kind": "leaf",
+      "spec_id": "spec_8266096fe8e4"
+    },
+    {
+      "id": "native-diagnostics",
+      "kind": "leaf",
+      "spec_id": "spec_0eec659b881f"
+    },
+    {
+      "id": "workspace-historical-readiness",
+      "kind": "leaf",
+      "spec_id": "spec_4e132646e077"
+    },
+    {
+      "id": "native-evidence",
+      "kind": "agg",
+      "op": "all_pass",
+      "children": [
+        "store-evidence",
+        "projection-read",
+        "native-diagnostics",
+        "workspace-historical-readiness"
+      ]
+    }
+  ]
+}

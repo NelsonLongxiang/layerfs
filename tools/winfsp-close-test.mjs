@@ -4,7 +4,8 @@ import {spawn,spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync,mkdirSync,readFileSync,writeFileSync,openSync,closeSync} from 'node:fs';
 import {join,resolve} from 'node:path';
-function analyze(provider,application){
+import {fileURLToPath} from 'node:url';
+export function analyze(provider,application){
  const rows=[...provider.matchAll(/NORMAL_CLOSE_REFUSED phase=(\d+) status=80000011 files=(\d+) directories=(\d+) commit=(\d+) capture=(\d+) prepared=0 service_kept=true/g)].map(m=>m.slice(1).map(Number));
  assert.deepEqual(rows.map(r=>r[0]),[0,1,2,3]);assert.ok(rows[0][1]>0&&rows[1][2]>0&&rows[2][1]>0&&rows[3][1]>0);
  assert.deepEqual([...application.matchAll(/CLOSE_CLIENT phase=(\d+) /g)].map(m=>Number(m[1])),[0,1,2,3]);
@@ -15,6 +16,7 @@ function analyze(provider,application){
  assert.match(provider,/NORMAL_CLOSE_DONE detach=true overlay_closed=true/);assert.match(provider,/errors=0/);
  return rows;
 }
+if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
 if(process.argv[2]==='--self-test'){
  const raw=JSON.parse(readFileSync(resolve(process.argv[3]),'utf8'));const p=raw.provider.stdout,a=raw.application.stdout;
  analyze(p,a);console.log('PASS actual reversible close trace');
@@ -73,3 +75,4 @@ try{
 }catch(e){failure=String(e);if(held!==undefined){try{closeSync(held);}catch{}}
  for(const p of [app,provider])if(p&&p.child.exitCode===null&&!p.child.killed)p.child.kill();await Promise.all([app?.ended,provider.ended]);throw e;
 }finally{clearTimeout(timer);writeFileSync(join(out,'result.json'),JSON.stringify({status:failure?'FAIL':'PASS',identity,failure,provider:provider.record,application:app?.record??null,workspace_qualified:false,general_section_inventory:false},null,2));}
+}

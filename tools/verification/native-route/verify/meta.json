@@ -20,6 +20,22 @@
     {
       "file": "verify/specs/spec_04bcdb7fdf40.json",
       "sha256": "0e96fe4fb337eccdb04fb7b1c82d6638bbb43818b43ab8a939a34cfd9e0381c2"
+    },
+    {
+      "file": "verify/specs/spec_c4f2f3fe21d2.json",
+      "sha256": "92657660fe0513b4d735698710fa463fe8691590da8630401ead19305dc545c7"
+    },
+    {
+      "file": "verify/specs/spec_8266096fe8e4.json",
+      "sha256": "6cb2e2ca143911e6bb6732512df24e80128bac36ab9bf0c9dfd945addfa939f7"
+    },
+    {
+      "file": "verify/specs/spec_4e132646e077.json",
+      "sha256": "e72b824cd7184c8cbef9e0b1ef05b9de1ace43af2b23d98698d5f44452addf96"
+    },
+    {
+      "file": "verify/specs/spec_0eec659b881f.json",
+      "sha256": "cfe3038181f092b0a5e8dca1206c6a9af7f21130eba4dff33ca82fa548e0a328"
     }
   ],
   "orchestration": [
@@ -39,12 +55,22 @@
     },
     {
       "path": "tools/counterexamples.mjs",
-      "sha256": "92ac899409c6a5886bc3cc116ae5a3d19ebb4a6682f509846c5521c6ec54e488",
+      "sha256": "997d7a55190276ed180bbc000af661149509d99efbf672b587f29ea2198f1405",
       "role": "test"
     },
     {
       "path": "tools/engine-test.mjs",
       "sha256": "8fa927d7c41131bd6d23b6a20ca5e3c93125497aa8765a91089ed954261e167e",
+      "role": "test"
+    },
+    {
+      "path": "tools/native-test.mjs",
+      "sha256": "e0270996250217bc7dfbeea192161469e5832a695dba47f8116338fe5b3ceb9d",
+      "role": "test"
+    },
+    {
+      "path": "tools/native.mjs",
+      "sha256": "dbaa152b50f530e4deab257ade49c1535916f31a350299c2cf599ffa92bb18ab",
       "role": "test"
     },
     {
@@ -131,6 +157,46 @@
       "reason": "Add actual SQLite in-memory artifact tampering and derived-field tampering regressions.",
       "actor": "dsh-session:b9357cbc/gpt-6-astra",
       "at": "2026-11-01T13:02:02.369Z"
+    },
+    {
+      "path": "tools/native.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "0a4fd322fbe90698d726c0ff9821813aa0b6c3fb4c5a7a91908bcfa0f0d1a60e",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T19:00:38.642Z"
+    },
+    {
+      "path": "tools/native-test.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "54399b56d015a90c950d5c95d6f000c66e753ed233379f0a30b9e6b37dcfe59d",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T19:00:38.700Z"
+    },
+    {
+      "path": "tools/counterexamples.mjs",
+      "old_sha256": "92ac899409c6a5886bc3cc116ae5a3d19ebb4a6682f509846c5521c6ec54e488",
+      "new_sha256": "997d7a55190276ed180bbc000af661149509d99efbf672b587f29ea2198f1405",
+      "reason": "Add nine native diagnostic criterion mutations plus positive and empty snapshots without promoting historic Workspace evidence.",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T19:00:38.757Z"
+    },
+    {
+      "path": "tools/native.mjs",
+      "old_sha256": "0a4fd322fbe90698d726c0ff9821813aa0b6c3fb4c5a7a91908bcfa0f0d1a60e",
+      "new_sha256": "dbaa152b50f530e4deab257ade49c1535916f31a350299c2cf599ffa92bb18ab",
+      "reason": "Format the existing parser and import path for review without changing semantic checks or frozen facts.",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T19:11:18.569Z"
+    },
+    {
+      "path": "tools/native-test.mjs",
+      "old_sha256": "54399b56d015a90c950d5c95d6f000c66e753ed233379f0a30b9e6b37dcfe59d",
+      "new_sha256": "e0270996250217bc7dfbeea192161469e5832a695dba47f8116338fe5b3ceb9d",
+      "reason": "Format existing adversarial evidence controls for review; same cases and assertions.",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T19:11:18.627Z"
     }
   ]
 }
