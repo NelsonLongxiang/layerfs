@@ -75,6 +75,26 @@ static volatile LONG creates = 0, opens = 0, reads = 0, writes = 0, renames = 0,
                      cleanups = 0, closes = 0, deletes = 0, callback_error = 0;
 static volatile LONG ordinary_writes = 0, constrained_writes = 0;
 static bool cache_mode = false;
+static bool trace_handles = false;
+static volatile LONG trace_events = 0;
+// Bounded diagnostic output, not an admission limit. Saturation is explicit.
+static void trace_handle(const char *event, UINT64 held, UINT64 serial,
+                         ULONG flags, PCWSTR name = nullptr) {
+  if (!trace_handles)
+    return;
+  auto seq = InterlockedIncrement(&trace_events);
+  if (seq > 20000) {
+    if (seq == 20001) {
+      puts("NATIVE_HANDLE_TRACE_SATURATED limit=20000");
+      fflush(stdout);
+    }
+    return;
+  }
+  printf("NATIVE_HANDLE event=%s seq=%ld tick=%llu handle=%llu serial=%llu "
+         "flags=%08lx name=%ls\n",
+         event, seq, GetTickCount64(), held, serial, flags, name ? name : L"-");
+  fflush(stdout);
+}
 static UINT32 length(PCWSTR text) {
   return text ? static_cast<UINT32>(wcslen(text)) : 0;
 }
@@ -158,6 +178,7 @@ static NTSTATUS open_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32, UINT32 access,
   full->UserContext2 = held;
   fill(stat, info);
   InterlockedIncrement(&opens);
+  trace_handle("open", held, stat.serial, access, name);
   return STATUS_SUCCESS;
 }
 static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
@@ -180,6 +201,7 @@ static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
   full->UserContext2 = held;
   fill(stat, info);
   InterlockedIncrement(&creates);
+  trace_handle("create", held, stat.serial, access, name);
   return STATUS_SUCCESS;
 }
 static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32 attributes,
@@ -196,6 +218,9 @@ static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32 attributes,
 }
 static VOID cleanup(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR name, ULONG flags) {
   InterlockedIncrement(&cleanups);
+  trace_handle("cleanup", handle(ctx),
+               static_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx)->UserContext,
+               flags, name);
   if (flags & FspCleanupDelete) {
     auto status = bridge.unlink(name, length(name));
     if (status < 0) {
@@ -219,6 +244,9 @@ static VOID close_file(FSP_FILE_SYSTEM *, PVOID ctx) {
     fprintf(stderr, "OVERLAY_CLOSE_FAIL %08lx\n", static_cast<ULONG>(status));
   }
   InterlockedIncrement(&closes);
+  trace_handle("close", handle(ctx),
+               static_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx)->UserContext,
+               static_cast<ULONG>(status));
   if (cache_mode) {
     printf("CACHE_CLOSE handle=%llu cleanup=%ld\n", handle(ctx), cleanups);
     fflush(stdout);
@@ -438,6 +466,10 @@ static bool exists(PCWSTR root, PCWSTR phase) {
   return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
 }
 int wmain(int argc, wchar_t **argv) {
+  WCHAR trace[2]{};
+  trace_handles =
+      GetEnvironmentVariableW(L"LAYERFS_NATIVE_TRACE_HANDLES", trace, 2) == 1 &&
+      trace[0] == L'1';
   puts("WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos");
   puts("https://github.com/winfsp/winfsp - diagnostic Rust Overlay bridge");
   const bool binding_mode = argc == 7 && wcscmp(argv[5], L"--bind-stdin") == 0;

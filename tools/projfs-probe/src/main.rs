@@ -123,7 +123,12 @@ fn main() {
             capture_child, capture_live, check, live, live_store, namespace_child, namespace_live,
             ProbeError,
         };
-        let result = if args.len() == 2 && args[0] == "cache-child" {
+        let result = if args.len() == 3 && args[0] == "mapping-lifetime" {
+            layerfs_native_probe::windows::mapping_lifetime(
+                Path::new(&args[1]),
+                &args[2].to_string_lossy(),
+            )
+        } else if args.len() == 2 && args[0] == "cache-child" {
             layerfs_native_probe::windows::cache_child(Path::new(&args[1]))
         } else if args.len() == 2 && args[0] == "close-child" {
             layerfs_native_probe::windows::close_child(Path::new(&args[1]))

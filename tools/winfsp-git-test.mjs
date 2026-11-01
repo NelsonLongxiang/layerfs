@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
-import {existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync, openSync, closeSync} from 'node:fs';
 import {join, resolve, relative} from 'node:path';
 assert.equal(process.platform, 'win32');
 assert.equal(process.argv.length, 8);
@@ -111,19 +111,37 @@ function launch(name) {
     exit: null,
     error: null
   };
-  const child = spawn(host, args, {stdio: ['pipe', 'pipe', 'pipe']});
+  // Git runs synchronously below. Pipe consumers on this event loop would stall
+  // native callbacks once verbose provider output fills the OS pipe buffer.
+  const stdoutPath = join(local, 'provider-stdout.log'),
+        stderrPath = join(local, 'provider-stderr.log');
+  const stdoutFd = openSync(stdoutPath, 'wx'), stderrFd = openSync(stderrPath, 'wx');
+  let child;
+  try {
+    child = spawn(host, args, {stdio: ['pipe', stdoutFd, stderrFd]});
+  } finally {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+  }
+  const collect = () => {
+    record.stdout = readFileSync(stdoutPath, 'utf8');
+    record.stderr = readFileSync(stderrPath, 'utf8');
+  };
+  record.stdout_path = stdoutPath;
+  record.stderr_path = stderrPath;
   child.stdin.on('error', e => record.error = e.message);
   child.stdin.end(frame());
-  child.stdout.on('data', d => record.stdout += d);
-  child.stderr.on('data', d => record.stderr += d);
   const ended = new Promise(resolve => {
     child.once('error', e => {
       record.error = e.message;
+      record.finished = new Date().toISOString();
+      collect();
       resolve(record);
     });
     child.once('exit', (code, signal) => {
       record.exit = {code, signal};
       record.finished = new Date().toISOString();
+      collect();
       resolve(record);
     });
   });

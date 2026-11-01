@@ -461,3 +461,41 @@ eight files had Cleanup but not Close after Git exited. It keeps the data checkp
 separate from normal-close qualification and does not relax the close guard, force
 flush/unmap, extend waits or reinterpret test-process cancellation as normal unmount.
 See the [metadata/Git result](../../core/docs/issues/352/WINFSP-GIT-METADATA-2026-11-02.md).
+
+## Read-only section lifetime diagnosis
+
+The Git close failure is now correlated by native token: one index and seven loose
+object handles were opened read-only, each received Cleanup, and none received
+Close within the unchanged ten-second readiness window. The Rust bridge correctly
+retains those exact OpenFile owners; this observation alone is not a full kernel
+section inventory or proof of which internal component owns the remaining reference.
+
+Set LAYERFS_NATIVE_TRACE_HANDLES=1 on the diagnostic host to record token, serial,
+access/cleanup flags, name and sequence for open/create/Cleanup/Close. Output is
+capped at 20,000 events with an explicit saturation marker; this is a trace cap, not
+a filesystem admission limit. The audit refuses saturated or incomplete traces.
+Native provider logs go directly to task-local files in the Git harness. Draining
+a provider pipe on the same Node event loop that synchronously runs Git can block
+the native callbacks when the pipe fills; file-backed output avoids that test bug.
+
+```powershell
+node tools/winfsp-mapping-lifetime-test.mjs <native-host> <installed-WinFsp-dll> <Rust-dll> <client-exe> <fresh-output>
+node tools/winfsp-handle-trace.mjs <result.json>
+node tools/winfsp-handle-trace.mjs <result.json> --self-test
+```
+
+The minimal caller reads the same existing Store-backed file in three separate
+mounts: ordinary read, readonly mapping released before File closure, and File
+closed while its readonly view remains before UnmapViewOfFile. The first two close
+normally. The third has application exit0 yet one Cleanup without Close, so a new
+normal-stop request returns Busy and the isolated test provider is cancelled after
+the recorded refusal. Harness exit0 means the observation completed and audited,
+NOT that every arm closed normally. Host timeouts, missing outcomes and forged
+completion are rejected. No flush, forced caller unmap or early Rust release occurs.
+
+Pinned Git-for-Windows source uses the third ordering for loose objects. The result
+is reproducible without Git, mutations or Commit, but the missing Close has not
+been traced inside the kernel; the cause remains narrower than a general driver
+leak claim. Ordinary cached access, notifications and irreversible STOP are not
+promoted to reliable drain/fence mechanisms by this evidence. The original Git
+qualification stays FAIL; [lifetime report](../../core/docs/issues/352/WINFSP-READONLY-LIFETIME-2026-11-02.md).
