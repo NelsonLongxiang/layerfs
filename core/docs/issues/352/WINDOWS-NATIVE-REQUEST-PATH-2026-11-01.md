@@ -2,6 +2,7 @@
 
 > **Status:** Research and executable preflight; not installed, not a product route or release qualification.
 > 来源读取：2026-11-01 22:15–22:30，Asia/Shanghai。
+> 后续更新：用户已明确授权安装；22:42安装成功，22:54原生回调活证通过。本文的“未安装/待授权”描述保留为当时状态，当前结果见[原生请求活证](WINFSP-NATIVE-LIVE-2026-11-01.md)。
 
 ## 已交付与当前进度
 
