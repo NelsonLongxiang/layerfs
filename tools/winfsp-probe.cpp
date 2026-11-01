@@ -35,6 +35,7 @@ struct Bridge {
   HMODULE dll = nullptr;
   INT32(__cdecl *start)(PCWSTR, UINT32) = nullptr;
   INT32(__cdecl *reopen)(PCWSTR, UINT32, PCWSTR, UINT32) = nullptr;
+  INT32(__cdecl *bind_stdin)(PCWSTR, UINT32, PCWSTR, UINT32) = nullptr;
   INT32(__cdecl *stat)(PCWSTR, UINT32, Stat *) = nullptr;
   INT32(__cdecl *open)
   (PCWSTR, UINT32, UINT32, UINT32, UINT64 *, Stat *) = nullptr;
@@ -386,9 +387,11 @@ static bool exists(PCWSTR root, PCWSTR phase) {
 int wmain(int argc, wchar_t **argv) {
   puts("WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos");
   puts("https://github.com/winfsp/winfsp - diagnostic Rust Overlay bridge");
-  if (argc != 5 && argc != 6) {
+  const bool binding_mode = argc == 7 && wcscmp(argv[5], L"--bind-stdin") == 0;
+  if (argc != 5 && argc != 6 && !binding_mode) {
     fwprintf(stderr, L"usage: probe <installed-WinFsp-dll> <new-mount> "
-                     L"<new-control> <Rust-bridge-dll> [existing-Store]\n");
+                     L"<new-control> <Rust-bridge-dll> [existing-Store | "
+                     L"--bind-stdin existing-Store]\n");
     return 1;
   }
   if (!fresh_absolute(argv[2])) {
@@ -426,6 +429,7 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(api, add, FspFileSystemAddDirInfo);
   LOAD(bridge, start, lf_start);
   LOAD(bridge, reopen, lf_reopen);
+  LOAD(bridge, bind_stdin, lf_bind_stdin);
   LOAD(bridge, stat, lf_stat);
   LOAD(bridge, open, lf_open);
   LOAD(bridge, info, lf_info);
@@ -460,8 +464,11 @@ int wmain(int argc, wchar_t **argv) {
   const bool rebound =
       argc == 6 && !cache_mode && !concurrent_mode && !close_mode;
   auto started =
-      rebound ? bridge.reopen(argv[5], length(argv[5]), store, length(store))
-              : bridge.start(store, length(store));
+      binding_mode
+          ? bridge.bind_stdin(argv[6], length(argv[6]), store, length(store))
+          : (rebound
+                 ? bridge.reopen(argv[5], length(argv[5]), store, length(store))
+                 : bridge.start(store, length(store)));
   if (started < 0)
     return 1;
   Stat root{};
@@ -512,6 +519,7 @@ int wmain(int argc, wchar_t **argv) {
   bool committed1 = false, committed2 = false, unchanged = false;
   unsigned cache_phase = 0;
   unsigned close_phase = 0;
+  unsigned binding_commits = 0;
   bool close_prepared = false, close_checked = false, idle_reported = false;
   std::thread commit_worker;
   std::atomic<bool> worker_done{false};
@@ -522,11 +530,30 @@ int wmain(int argc, wchar_t **argv) {
   UINT64 captured_generation = 0;
   INT64 captured_revision = 0;
   if (status >= 0 && mark(argv[3], L"ready")) {
-    puts(rebound ? "NATIVE_REBOUND_READY existing_store=true init=false"
-                 : "NATIVE_OVERLAY_READY");
+    puts(
+        binding_mode
+            ? "NATIVE_BIND_READY existing_store=true init=false stdin_only=true"
+            : (rebound ? "NATIVE_REBOUND_READY existing_store=true init=false"
+                       : "NATIVE_OVERLAY_READY"));
     fflush(stdout);
     auto deadline = GetTickCount64() + 45000;
     while (GetTickCount64() < deadline) {
+      if (binding_mode) {
+        WCHAR request[48], ack[48];
+        swprintf_s(request, L"binding-commit-%u", binding_commits);
+        swprintf_s(ack, L"binding-committed-%u", binding_commits);
+        if (exists(argv[3], request)) {
+          UINT32 changed = 0xa5a5a5a5u;
+          if (bridge.commit_scoped(1, &changed) < 0)
+            break;
+          printf("EXPLICIT_BIND_COMMIT index=%u changed=%u scope=published\n",
+                 binding_commits, changed);
+          fflush(stdout);
+          if (!mark(argv[3], ack))
+            break;
+          ++binding_commits;
+        }
+      }
       if (close_mode && close_phase < 4) {
         WCHAR request[32], ack[32];
         swprintf_s(request, L"close-attempt-%u", close_phase);
@@ -739,8 +766,8 @@ int wmain(int argc, wchar_t **argv) {
           ++cache_phase;
         }
       }
-      if (!close_mode && !concurrent_mode && !cache_mode && !rebound &&
-          !captured && exists(argv[3], L"capture")) {
+      if (!binding_mode && !close_mode && !concurrent_mode && !cache_mode &&
+          !rebound && !captured && exists(argv[3], L"capture")) {
         if (bridge.capture() < 0)
           break;
         captured = true;
@@ -886,19 +913,25 @@ int wmain(int argc, wchar_t **argv) {
   puts("NOT_RUN product_Workspace general_concurrency mapped_lifecycle "
        "full_repository");
   return done && closed == 0 && !callback_error &&
-                 (close_mode || cache_mode || unchanged) &&
-                 (close_mode
-                      ? (close_phase == 4 && opens && reads)
-                      : (concurrent_mode
-                             ? (concurrent_captured && concurrent_written &&
-                                committed1 && committed2)
-                             : (cache_mode
-                                    ? (cache_phase == 8 && creates && writes)
-                                    : (rebound ? (opens && reads)
-                                               : (captured && checked &&
-                                                  committed1 && committed2 &&
-                                                  creates && reads && writes &&
-                                                  renames && deletes)))))
+                 (binding_mode || close_mode || cache_mode || unchanged) &&
+                 (binding_mode
+                      ? (opens && reads)
+                      : (close_mode
+                             ? (close_phase == 4 && opens && reads)
+                             : (concurrent_mode
+                                    ? (concurrent_captured &&
+                                       concurrent_written && committed1 &&
+                                       committed2)
+                                    : (cache_mode
+                                           ? (cache_phase == 8 && creates &&
+                                              writes)
+                                           : (rebound
+                                                  ? (opens && reads)
+                                                  : (captured && checked &&
+                                                     committed1 && committed2 &&
+                                                     creates && reads &&
+                                                     writes && renames &&
+                                                     deletes))))))
              ? 0
              : 1;
 }

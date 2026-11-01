@@ -1,6 +1,5 @@
 //! One owned Commit attempt. Admission/settlement use the bridge lock; construction does not.
 use super::{failed, refused, workspace_error, CommitScope, Result, Session};
-use crate::store_fixture::{branch, BINDING, CURSOR};
 use layerfs_history::{BranchSnapshot, CommitOutcome, CommitVia, HistoryCatalog};
 use layerfs_store_service::store::{BoundWorkspace, CommitFailure, CommitOptions, CommitSuccess};
 use std::{
@@ -111,6 +110,16 @@ impl Session {
             ));
         }
         let checked = (|| {
+            let installed = self.bound.snapshot().map_err(workspace_error)?;
+            let expected_parent = match &success.merge {
+                Some(merge) => {
+                    if merge.from != before.branch.head_commit || !merge.conflicts.is_empty() {
+                        return Err(failed("unexpected merge provenance"));
+                    }
+                    merge.head
+                }
+                None => before.branch.head_commit,
+            };
             let changed = match &success.history {
                 Some(CommitOutcome::Committed { record, .. }) => {
                     if success.capture.is_none()
@@ -119,7 +128,8 @@ impl Session {
                         return Err(failed("missing captured namespace construction receipt"));
                     }
                     if record.meta.via != CommitVia::Workspace
-                        || record.parent != before.branch.head_commit
+                        || record.parent != expected_parent
+                        || record.meta.branch != Some(self.binding.branch)
                     {
                         return Err(failed("unexpected Workspace Commit provenance/parent"));
                     }
@@ -128,8 +138,8 @@ impl Session {
                             .with_sqlite_profile(
                                 layerfs_persistence::SqlitePersistenceProfile::Disposable,
                             ),
-                        BINDING,
-                        CURSOR,
+                        &self.binding.catalog,
+                        self.binding.cursor,
                     )
                     .map_err(failed)?;
                     let stored = handles
@@ -137,17 +147,14 @@ impl Session {
                         .commit(record.id)
                         .map_err(failed)?
                         .ok_or_else(|| failed("published Commit absent on independent reopen"))?;
-                    let branch = handles
-                        .history
-                        .branch_snapshot(branch())
-                        .map_err(failed)?
-                        .ok_or_else(|| failed("published Branch absent"))?;
+                    // Immutable publication and this Workspace install are authoritative.
+                    // Another Workspace may advance the global Branch before this read.
                     if stored != **record
-                        || branch.branch.head_commit != Some(record.id)
-                        || branch.effective_root != record.root
+                        || installed.branch.head_commit != Some(record.id)
+                        || installed.effective_root != record.root
                     {
                         return Err(failed(
-                            "independent history reopen differs from publication",
+                            "immutable history or local install differs from publication",
                         ));
                     }
                     println!("OVERLAY_COMMIT kind=Committed scope=published id={:?} root={:?} parent={:?} via=Workspace saved_bytes={} open_handles={}", record.id, record.root, record.parent, success.saved.stored_bytes, self.handles.len());
@@ -155,7 +162,7 @@ impl Session {
                     true
                 }
                 Some(CommitOutcome::UpToDate { head, root }) => {
-                    if *head != before.branch.head_commit || *root != before.effective_root {
+                    if *head != installed.branch.head_commit || *root != installed.effective_root {
                         return Err(failed("unexpected UpToDate identity"));
                     }
                     println!(

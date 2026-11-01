@@ -21,6 +21,16 @@ pub const CURSOR: [u8; 32] = [71; 32];
 pub fn branch() -> BranchId {
     BranchId::from_authority([2; 16])
 }
+/// Legacy single-session fixture convenience; explicit binding callers never use these defaults.
+pub fn native_binding() -> crate::native_overlay::Result<crate::native_binding::Binding> {
+    crate::native_binding::Binding::new(
+        BINDING.to_vec(),
+        CURSOR,
+        branch(),
+        layerfs_history::WorkspaceId::from_authority([85; 32])
+            .map_err(crate::native_overlay::failed)?,
+    )
+}
 pub const LARGE: usize = 4 * 1024 * 1024 + 31;
 pub const DEFERRED: usize = 2 * 1024 * 1024;
 pub fn pattern(i: usize) -> u8 {
@@ -40,6 +50,23 @@ pub struct Fixture {
 }
 impl Fixture {
     pub fn create(directory: &Path) -> Result<Self> {
+        Self::create_with(
+            directory,
+            &HistoryCatalogConfig {
+                binding_key: BINDING.to_vec(),
+                cursor_key: CURSOR,
+                incarnation: 1,
+            },
+            branch(),
+        )
+    }
+    /// Test data through the same Project Init, with explicit non-default authority.
+    pub fn create_with(
+        directory: &Path,
+        catalog: &HistoryCatalogConfig,
+        branch: BranchId,
+    ) -> Result<Self> {
+        catalog.check().map_err(error)?;
         if !directory.is_absolute() {
             return Err("fixture root must be absolute".into());
         }
@@ -69,14 +96,10 @@ impl Fixture {
                 .with_sqlite_profile(SqlitePersistenceProfile::Disposable),
             locator: "/layerfs-store/global/store.sqlite".into(),
             policy: StoragePolicy::frozen_default(),
-            catalog: HistoryCatalogConfig {
-                binding_key: BINDING.to_vec(),
-                cursor_key: CURSOR,
-                incarnation: 1,
-            },
+            catalog: catalog.clone(),
             stack: LayerStackId::from_authority([1; 16]),
             stack_name: HistoryName::new("probe").map_err(error)?,
-            branch: branch(),
+            branch,
             branch_name: HistoryName::new("work").map_err(error)?,
             scope_seed: [3; 32],
             deadline: Instant::now() + Duration::from_secs(40),

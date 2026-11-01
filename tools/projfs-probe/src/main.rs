@@ -74,6 +74,19 @@ fn main() {
             }
             return;
         }
+        if args.len() == 2 && (args[0] == "binding-setup" || args[0] == "binding-verify") {
+            let mode = if args[0] == "binding-setup" {
+                "binding-setup"
+            } else {
+                "binding-verify"
+            };
+            if let Err(error) = layerfs_native_probe::binding_probe::run(mode, Path::new(&args[1]))
+            {
+                eprintln!("EXPLICIT_BINDING_CHECK_FAIL {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
         if args.len() == 2 && args[0] == "hold-lane" {
             if let Err(error) = layerfs_native_probe::commit_hold::hold(Path::new(&args[1])) {
                 eprintln!("LANE_HOLD_FAIL {error}");

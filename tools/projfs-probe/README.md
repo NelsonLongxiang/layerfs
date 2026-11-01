@@ -209,8 +209,9 @@ provider process over that exact Store path, with a fresh local Overlay owner an
 mount. Session::reopen calls no Fixture::create/Project Init: it reads the committed
 nested tree and its no-change Commit returns UpToDate. Both owned mounts must be
 removed after stop; no extra History record is created. This is not a power-loss
-or concurrent-mount proof. The diagnostic Workspace authority value remains fixed
-for these sequential, non-overlapping processes; concurrent identity is not claimed.
+or concurrent-mount proof. These legacy fixture wrappers retain a fixed synthetic
+Workspace authority only for their sequential use; the explicit-binding path below
+takes independent caller-owned identities and proves a bounded dual-mount scenario.
 
 No fs.apply, re-Init after mutation, native-tree scan/copy, manual SQL or alternate
 content encoding is used. A failed Commit retains its exact original failure;
@@ -377,3 +378,54 @@ cache-dirty inventory. The tests know which external references they created and
 verify their release; they do not qualify every hidden mapping/cache/ref race,
 forced teardown, crash recovery or full product Workspace. Error/timeout exit is
 reported as DIAGNOSTIC_EXIT_NOT_NORMAL rather than claiming a successful close.
+
+## Explicit existing-Store binding and independent Workspaces
+
+Session::bind_existing takes a validated Binding: catalog binding bytes, cursor
+capability, tagged Branch identity and caller-owned Workspace incarnation. The
+core bind, immutable Commit reads and publication checks use that binding, not
+fixture constants. The caller is responsible for a distinct nonzero Workspace
+incarnation; this adapter does not derive authority from a mount path or provide
+a fleet-wide duplicate-incarnation registry. Missing Branch, protected main,
+wrong catalog, malformed input and existing work roots refuse without fallback.
+Legacy Session::create/reopen and the original host fixture modes remain test-only
+conveniences; they explicitly pass the synthetic fixture binding to the same core.
+
+The host mode is:
+
+```text
+winfsp-probe.exe <installed-WinFsp-dll> <fresh-mount> <fresh-control> <Rust-dll> --bind-stdin <existing-Store>
+```
+
+Send exactly one binary bootstrap frame to stdin then close the pipe: ASCII magic
+LFSBND01 (8 bytes), little-endian u16 catalog length (1–128), catalog bytes, cursor
+capability (32 bytes), tagged Branch ID (17 bytes), Workspace ID (32 nonzero bytes).
+The maximum valid frame is 219 bytes; one extra byte is read to reject oversized
+input. Wrong width/tag, empty cursor and zero Workspace are refused. No input frame
+or capability is logged, placed in argv, or written to a bootstrap file; the backing
+Store retains its ordinary catalog identity, not an extra credential copy. This
+is not an authenticated remote protocol or a cryptographic memory-erasure claim.
+The caller owns stdin completion; test subprocesses have explicit wall deadlines.
+
+```powershell
+node tools/winfsp-binding-test.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <target>/debug/layerfs-projfs-probe.exe <fresh-output>
+```
+
+The test initializes one fresh synthetic Store through existing Project Init with
+non-default catalog/cursor/Branch input. Two native processes bind that exact Store
+with different Workspace incarnations, separate template/Overlay files and separate
+handles. Ordinary writes remain local until each explicit Published Commit. B's
+clean merge incorporates A's published change; A's mounted view remains at its own
+installed base. Closing A removes only A's Overlay; B's open descriptor still reads,
+writes and commits. A third fresh native mount sees the latest committed tree and
+its UpToDate adds no History. An independent read-only process checks all three
+versions, exact bytes, parent chain, branch and unchanged base membership.
+
+A safe Rust case deliberately lets B advance the global head before A settles an
+already completed Commit. Settlement now validates the returned merge parent,
+immutable History record and this Workspace's known install, not a moving global
+head. This corrects a diagnostic false failure; it does not change product merge
+semantics, force-overwrite policy or retry an operation. Conflict/unknown custody
+still retains the original result. Simultaneous Commit construction, conflicting
+edits, cross-process duplicate identities, kernel cache coherence for all merges,
+crash recovery, mappings and product SDK integration remain outside this proof.

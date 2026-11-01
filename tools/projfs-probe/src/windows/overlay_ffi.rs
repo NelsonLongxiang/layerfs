@@ -116,6 +116,37 @@ pub unsafe extern "C" fn lf_reopen(
     }
 }
 #[no_mangle]
+pub unsafe extern "C" fn lf_bind_stdin(
+    store: *const u16,
+    slen: u32,
+    work: *const u16,
+    wlen: u32,
+) -> i32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let store = unsafe { text(store, slen) }?;
+        let work = unsafe { text(work, wlen) }?;
+        let work = super::instance::new_root(Path::new(&work)).map_err(failed)?;
+        let binding = crate::native_binding::Binding::read_from(std::io::stdin().lock())?;
+        let mut slot = SESSION
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .map_err(|_| failed("bridge poisoned"))?;
+        if slot.is_some() || RETAINED.load(Ordering::Acquire) {
+            return Err(failed("session already present or retained"));
+        }
+        *slot = Some(Session::bind_existing(Path::new(&store), &work, binding)?);
+        Ok::<_, Error>(())
+    }));
+    match result {
+        Ok(Ok(())) => 0,
+        Ok(Err(e)) => {
+            eprintln!("OVERLAY_BIND_FAIL status={:08x}", e.status as u32);
+            e.status
+        }
+        Err(_) => 0xc0000001u32 as i32,
+    }
+}
+#[no_mangle]
 pub unsafe extern "C" fn lf_stat(ptr: *const u16, len: u32, out: *mut Stat) -> i32 {
     call(|s| unsafe { put(out, s.stat_path(&path(ptr, len)?)?) })
 }

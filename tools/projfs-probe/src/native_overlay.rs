@@ -1,5 +1,5 @@
 //! Diagnostic adapter over the existing bound Workspace, not another file store.
-use crate::store_fixture::{branch, Fixture, BINDING, CURSOR};
+use crate::{native_binding::Binding, store_fixture::Fixture};
 use layerfs_content::{filesystem::PathName, ContentError};
 use layerfs_history::CommitId;
 #[path = "native_commit.rs"]
@@ -142,6 +142,7 @@ pub struct Session {
     capture: Option<(Capture, CapturedReader)>,
     pub publications: u64,
     store_path: PathBuf,
+    binding: Binding,
     commits: Vec<CommitId>,
     pending_commit: Option<u64>,
     closing: bool,
@@ -153,10 +154,14 @@ pub struct Session {
 impl Session {
     pub fn create(path: &Path) -> Result<Self> {
         let fixture = Fixture::create(path).map_err(failed)?;
-        Self::bind_store(fixture.store, path)
+        Self::bind_store(fixture.store, path, crate::store_fixture::native_binding()?)
     }
     /// New local owner over the exact existing Store: no fixture import or Init.
     pub fn reopen(store: &Path, work: &Path) -> Result<Self> {
+        Self::bind_existing(store, work, crate::store_fixture::native_binding()?)
+    }
+    /// Explicit existing Store and caller-owned authority; never creates or copies a Store.
+    pub fn bind_existing(store: &Path, work: &Path, binding: Binding) -> Result<Self> {
         if !store.is_absolute() || !work.is_absolute() || !store.is_file() {
             return Err(refused(
                 0xc000000d,
@@ -166,19 +171,32 @@ impl Session {
         std::fs::create_dir(work).map_err(failed)?;
         layerfs_store_service::windows_acl::restrict_to_owner(work).map_err(failed)?;
         println!("STORE_REBOUND existing=true init=false");
-        Self::bind_store(store.to_path_buf(), work)
+        Self::bind_store(store.to_path_buf(), work, binding)
     }
-    fn bind_store(store_path: PathBuf, path: &Path) -> Result<Self> {
+    fn bind_store(store_path: PathBuf, path: &Path, binding: Binding) -> Result<Self> {
         let service = StoreService::open_direct(
             &store_path,
-            BINDING,
-            CURSOR,
+            &binding.catalog,
+            binding.cursor,
             &path.join("native-template.sqlite"),
         )
         .map_err(|e| failed(format!("{e:?}")))?;
-        let identity = layerfs_history::WorkspaceId::from_authority([85; 32]).map_err(failed)?;
+        let branch = service
+            .store
+            .history()
+            .branch(binding.branch)
+            .map_err(failed)?;
+        if branch.as_ref().is_none_or(|b| b.name.as_str() == "main") {
+            let status = if branch.is_none() {
+                0xc0000034
+            } else {
+                0xc0000022
+            };
+            service.close().map_err(failed)?;
+            return Err(refused(status, "Branch missing or protected main"));
+        }
         let bound = layerfs_telemetry::timer::Timing::disabled("native.bind", |scope| {
-            service.bind(identity, branch(), scope)
+            service.bind(binding.workspace, binding.branch, scope)
         })
         .0
         .map_err(failed)?;
@@ -194,6 +212,10 @@ impl Session {
             .overlay()
             .kernel_mount(bound.route(), root)
             .map_err(failed)?;
+        println!(
+            "NATIVE_BINDING branch={} workspace={:?} explicit_parameters=true",
+            binding.branch, binding.workspace
+        );
         println!("OVERLAY_BOUND root={root} source=real_Store profile=Disposable overlay=MEMORY_OFF_EXCLUSIVE");
         Ok(Self {
             service: Some(service),
@@ -205,6 +227,7 @@ impl Session {
             capture: None,
             publications: 0,
             store_path,
+            binding,
             commits: Vec::new(),
             pending_commit: None,
             closing: false,
@@ -802,8 +825,13 @@ impl Session {
             .commits
             .get(index)
             .ok_or_else(|| refused(0xc000000d, "Commit index absent"))?;
-        let mut saved = crate::saved::Saved::open_commit(&self.store_path, BINDING, CURSOR, id)
-            .map_err(failed)?;
+        let mut saved = crate::saved::Saved::open_commit(
+            &self.store_path,
+            &self.binding.catalog,
+            self.binding.cursor,
+            id,
+        )
+        .map_err(failed)?;
         let name = path.trim_start_matches('/');
         let entry = saved
             .entry(name)
