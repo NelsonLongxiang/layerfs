@@ -2,6 +2,18 @@
   "meta_index_version": 2,
   "specs": [
     {
+      "file": "verify/specs/spec_115dd073d852.json",
+      "sha256": "cac9d09cf9afe4b1c4e715dd8a4372b80f1e7f725c2ddcd5c9b180da4d521b2d"
+    },
+    {
+      "file": "verify/specs/spec_00b40a8dea1d.json",
+      "sha256": "bd9ad4d3f5de6780280aa766c65c13a5b8ed0e2ff6dad167374547865047d619"
+    },
+    {
+      "file": "verify/specs/spec_a889f493f3ba.json",
+      "sha256": "e2863b53707e1143942b20f90a133749a1efaff23787e2d597e99de393452192"
+    },
+    {
       "file": "verify/specs/spec_9c8f3b98db86.json",
       "sha256": "b1600696eb8bd8b71097d0757e04d9b242fcfa267fb73901676f055f2a9eb617"
     },
@@ -27,12 +39,22 @@
     },
     {
       "path": "tools/counterexamples.mjs",
-      "sha256": "43e1e5ccc1a7ca1122f5540a308b569457b5c4944940a57fe32fd157b9c8d6f6",
+      "sha256": "92ac899409c6a5886bc3cc116ae5a3d19ebb4a6682f509846c5521c6ec54e488",
       "role": "test"
     },
     {
       "path": "tools/engine-test.mjs",
       "sha256": "8fa927d7c41131bd6d23b6a20ca5e3c93125497aa8765a91089ed954261e167e",
+      "role": "test"
+    },
+    {
+      "path": "tools/projection-test.mjs",
+      "sha256": "711d75af7bb935ec0794468defc0a06fd9e05cb776ef8b599ae2984f7e4d2331",
+      "role": "test"
+    },
+    {
+      "path": "tools/projection.mjs",
+      "sha256": "bf932b2cb293fcecb3e6f4065fe80b8f971fb56542754294305cbf19ae48c10c",
       "role": "test"
     }
   ],
@@ -69,6 +91,46 @@
       "at": "2026-11-01T10:27:51.467Z",
       "actor": "dsh-session:b9357cbc/gpt-6-astra",
       "reason": "Initial registration before commit: pin integrity and explicit-home launcher regressions."
+    },
+    {
+      "path": "tools/projection.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "e5a458c58993487804d85a95255817182a1f1d0b2195b31e45bcacc45dd5b6c0",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T12:55:18.885Z"
+    },
+    {
+      "path": "tools/projection-test.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "3f53a1bd311ff5e5d686224c7347ed8e07107195a42ad8606cad6e7ebe97f37a",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T12:55:18.976Z"
+    },
+    {
+      "path": "tools/counterexamples.mjs",
+      "old_sha256": "43e1e5ccc1a7ca1122f5540a308b569457b5c4944940a57fe32fd157b9c8d6f6",
+      "new_sha256": "92ac899409c6a5886bc3cc116ae5a3d19ebb4a6682f509846c5521c6ec54e488",
+      "reason": "Add eight projection criterion counterexamples plus positive and empty snapshots; retain older baseline compatibility.",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T12:55:19.031Z"
+    },
+    {
+      "path": "tools/projection.mjs",
+      "old_sha256": "e5a458c58993487804d85a95255817182a1f1d0b2195b31e45bcacc45dd5b6c0",
+      "new_sha256": "bf932b2cb293fcecb3e6f4065fe80b8f971fb56542754294305cbf19ae48c10c",
+      "reason": "Add read-only embedded artifact hash and derived-field audit, called by import and explicit audit mode.",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T13:02:02.314Z"
+    },
+    {
+      "path": "tools/projection-test.mjs",
+      "old_sha256": "3f53a1bd311ff5e5d686224c7347ed8e07107195a42ad8606cad6e7ebe97f37a",
+      "new_sha256": "711d75af7bb935ec0794468defc0a06fd9e05cb776ef8b599ae2984f7e4d2331",
+      "reason": "Add actual SQLite in-memory artifact tampering and derived-field tampering regressions.",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "at": "2026-11-01T13:02:02.369Z"
     }
   ]
 }

@@ -1,0 +1,39 @@
+{
+  "tree_spec_id": "ts_layerfs_native_projection_20261101_r57",
+  "tree_spec_version": 1,
+  "title": "Retained native evidence: Store, read-only projection, Workspace readiness",
+  "root": "native-delivery",
+  "target": {
+    "kind": "sqlite-snapshot",
+    "id": "snapshot.sqlite",
+    "sha256": "sha256:e59c5b03652b636842200aa8d5f0d3a6ecc13283ba0dca209eb90eab92b914e6"
+  },
+  "engine_version": "0.118.0",
+  "nodes": [
+    {
+      "id": "store-evidence",
+      "kind": "leaf",
+      "spec_id": "spec_115dd073d852"
+    },
+    {
+      "id": "projection-read",
+      "kind": "leaf",
+      "spec_id": "spec_a889f493f3ba"
+    },
+    {
+      "id": "workspace-ready",
+      "kind": "leaf",
+      "spec_id": "spec_00b40a8dea1d"
+    },
+    {
+      "id": "native-delivery",
+      "kind": "agg",
+      "op": "all_pass",
+      "children": [
+        "store-evidence",
+        "projection-read",
+        "workspace-ready"
+      ]
+    }
+  ]
+}

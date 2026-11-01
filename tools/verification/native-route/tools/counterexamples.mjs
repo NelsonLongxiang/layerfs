@@ -37,8 +37,25 @@ const workspace = {
   W4: "DELETE FROM receipts WHERE id='workspace-lifecycle'",
 };
 const seed = "UPDATE preflight SET status='api-load-candidate',library_present=1,driver_present=1,library_loaded=1,exit_code=0; UPDATE receipts SET status='PASS',passes=1,failures=0,skips=0,exit_code=0,command='SYNTHETIC checker fixture - NOT an actual live proof',receipt_sha256='synthetic-fixture-only' WHERE group_name='workspace-proof';";
+const projection = {
+  positive: "",
+  P1: "UPDATE projection SET live_sha256=''",
+  P2: "UPDATE projection SET startup_ranges=1",
+  P3: "UPDATE projection SET current_root=pinned_root",
+  P4: "UPDATE projection SET binary_exact=0",
+  P5: "UPDATE projection SET untouched_read=1",
+  P6: "UPDATE projection SET writeback=1",
+  P7: "UPDATE projection SET workspace_qualified=1",
+  P8: "DELETE FROM projection_artifacts WHERE name='store-live'",
+  empty: "DELETE FROM projection; DELETE FROM projection_artifacts",
+};
 const fixtures = [];
-for (const [group, cases] of [["store", store], ["workspace", workspace]]) {
+const groups = [["store", store], ["workspace", workspace]];
+const probe = new DatabaseSync(source, { readOnly: true });
+const hasProjection = !!probe.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='projection'").get();
+probe.close();
+if (hasProjection) groups.push(["projection", projection]);
+for (const [group, cases] of groups) {
   for (const [name, mutation] of Object.entries(cases)) {
     const file = join(output, group + "-" + name + ".sqlite");
     copyFileSync(source, file);

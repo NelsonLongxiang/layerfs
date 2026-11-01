@@ -1,0 +1,514 @@
+{
+  "contract_version": "1.2",
+  "spec_id": "spec_a889f493f3ba",
+  "spec_version": 1,
+  "title": "prepared spec",
+  "domain": "prepared",
+  "created": "2026-11-01T12:56:29.354Z",
+  "runtime_min": "1",
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1.2"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-11-01T12:56:29.336Z"
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "P1 必须导入完整四用例原始回执，退出码和二进制哈希一致、起止时间有效；记录基线",
+      "severity": "S1",
+      "source_clause": "P1 必须导入完整四用例原始回执，退出码和二进制哈希一致、起止时间有效；记录基线快照、明确声明的源码提交及树、探针树、测试脚本和回执哈希；导入不是产品重跑，也不是源码到二进制的签名证明。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "cases",
+                "op": "=",
+                "value": 4
+              },
+              {
+                "col": "binary_sha256",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "started",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "ended",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "source_commit",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "source_tree",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "probe_tree",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "base_snapshot_sha256",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "harness_sha256",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "result_sha256",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "live_sha256",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P1",
+        "quote": "P1 必须导入完整四用例原始回执，退出码和二进制哈希一致、起止时间有效；记录基线快照、明确声明的源码提交及树、探针树、测试脚本和回执哈希；导入不是产品重跑，也不是源码到二进制的签名证明。"
+      }
+    },
+    {
+      "id": "V2",
+      "role": "assert",
+      "title": "P2 启动时目录读取、文件范围读取、发出字节、payload读取均为0，并报告无",
+      "severity": "S1",
+      "source_clause": "P2 启动时目录读取、文件范围读取、发出字节、payload读取均为0，并报告无目录扫描和无文件范围预读；不把元数据读取称作零I/O。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "startup_directories",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "startup_ranges",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "startup_emitted",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "startup_payload_reads",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "no_directory_scan",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "no_file_ranges",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "startup_pack_bytes",
+                "op": ">=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P2",
+        "quote": "P2 启动时目录读取、文件范围读取、发出字节、payload读取均为0，并报告无目录扫描和无文件范围预读；不把元数据读取称作零I/O。"
+      }
+    },
+    {
+      "id": "V3",
+      "role": "assert",
+      "title": "P3 固定根必须与推进后的Branch根不同，普通子进程仍读到固定根的旧字节；B",
+      "severity": "S1",
+      "source_clause": "P3 固定根必须与推进后的Branch根不同，普通子进程仍读到固定根的旧字节；Branch挑战不是Workspace写回。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "pinned_root",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "current_root",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "pinned_root",
+                "op": "!=",
+                "value": {
+                  "col": "current_root"
+                }
+              },
+              {
+                "col": "pinned_old_bytes",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P3",
+        "quote": "P3 固定根必须与推进后的Branch根不同，普通子进程仍读到固定根的旧字节；Branch挑战不是Workspace写回。"
+      }
+    },
+    {
+      "id": "V4",
+      "role": "assert",
+      "title": "P4 普通Windows子进程必须核对88项Store的6个根条目、80项目录、",
+      "severity": "S1",
+      "source_clause": "P4 普通Windows子进程必须核对88项Store的6个根条目、80项目录、4个二进制读取窗口及精确字节、嵌套目录、中文名和空文件；回调读取大于0且panic和通知溢出为0。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "store_entries",
+                "op": "=",
+                "value": 88
+              },
+              {
+                "col": "root_entries",
+                "op": "=",
+                "value": 6
+              },
+              {
+                "col": "directory_entries",
+                "op": "=",
+                "value": 80
+              },
+              {
+                "col": "binary_ranges",
+                "op": "=",
+                "value": 4
+              },
+              {
+                "col": "binary_exact",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "nested",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "unicode",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "empty_file",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "callback_reads",
+                "op": ">",
+                "value": 0
+              },
+              {
+                "col": "panics",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "overflow",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P4",
+        "quote": "P4 普通Windows子进程必须核对88项Store的6个根条目、80项目录、4个二进制读取窗口及精确字节、嵌套目录、中文名和空文件；回调读取大于0且panic和通知溢出为0。"
+      }
+    },
+    {
+      "id": "V5",
+      "role": "assert",
+      "title": "P5 2MiB未访问文件必须未读取且未物化、原输入路径不存在；记录实际水合字节，",
+      "severity": "S1",
+      "source_clause": "P5 2MiB未访问文件必须未读取且未物化、原输入路径不存在；记录实际水合字节，不以应用小窗口推断细粒度驻留或冷缓存性能。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "untouched_bytes",
+                "op": "=",
+                "value": 2097152
+              },
+              {
+                "col": "untouched_read",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "source_folder_absent",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "emitted_bytes",
+                "op": ">",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P5",
+        "quote": "P5 2MiB未访问文件必须未读取且未物化、原输入路径不存在；记录实际水合字节，不以应用小窗口推断细粒度驻留或冷缓存性能。"
+      }
+    },
+    {
+      "id": "V6",
+      "role": "assert",
+      "title": "P6 Store读取源必须只读且pack写入为0，已有投影文件写改删拒绝；NTF",
+      "severity": "S1",
+      "source_clause": "P6 Store读取源必须只读且pack写入为0，已有投影文件写改删拒绝；NTFS允许本地新文件但不进入Store、无写回，不把投影根称作只读安全沙箱。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "store_reader",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "pack_write_bytes",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "projected_mutations_refused",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "local_files_allowed",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "local_not_writeback",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "writeback",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P6",
+        "quote": "P6 Store读取源必须只读且pack写入为0，已有投影文件写改删拒绝；NTFS允许本地新文件但不进入Store、无写回，不把投影根称作只读安全沙箱。"
+      }
+    },
+    {
+      "id": "V7",
+      "role": "assert",
+      "title": "P7 Workspace资格必须为false，overlay_capture和c",
+      "severity": "S1",
+      "source_clause": "P7 Workspace资格必须为false，overlay_capture和commit_writeback保持NOT_RUN，并明确列出sandbox_isolation与open_mapping_lifecycle未验证；只读投影不能替代W2/W3/W4。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "workspace_qualified",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "overlay_capture",
+                "op": "=",
+                "value": "NOT_RUN"
+              },
+              {
+                "col": "commit_writeback",
+                "op": "=",
+                "value": "NOT_RUN"
+              },
+              {
+                "col": "unimplemented_explicit",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P7",
+        "quote": "P7 Workspace资格必须为false，overlay_capture和commit_writeback保持NOT_RUN，并明确列出sandbox_isolation与open_mapping_lifecycle未验证；只读投影不能替代W2/W3/W4。"
+      }
+    },
+    {
+      "id": "V8",
+      "role": "assert",
+      "title": "P8 SQLite快照必须携带result及四个指定用例共5份非空原始JSON和",
+      "severity": "S1",
+      "source_clause": "P8 SQLite快照必须携带result及四个指定用例共5份非空原始JSON和各自SHA256，便于归档后复核；不得只依赖人工总结或已迁移的本机路径。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "projection_artifacts",
+          "select": [
+            "name"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "name",
+                "op": "in",
+                "value": [
+                  "result",
+                  "direct-child-refuses",
+                  "relative-refuses",
+                  "existing-refuses",
+                  "store-live"
+                ]
+              },
+              {
+                "col": "sha256",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "body",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 5
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "projection.md#P8",
+        "quote": "P8 SQLite快照必须携带result及四个指定用例共5份非空原始JSON和各自SHA256，便于归档后复核；不得只依赖人工总结或已迁移的本机路径。"
+      }
+    }
+  ],
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "materials_sha256": "ffd39075dd517e967991a717b69130ca9ba60a08801e897763701523e680182a"
+}

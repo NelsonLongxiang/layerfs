@@ -51,6 +51,48 @@ Repeat submit/prepare/run for `workspace.md`, `workspace-candidates.json`, and `
 - Snapshot/receipt hashes authenticate byte consistency, not the honesty of an arbitrary producer or source-to-binary provenance. The installed addon is identified, not rebuilt by this collector.
 - A Windows home-mode SKIP is not a Windows ACL proof. A host/UI SKIP is not a GUI acceptance. Current Workspace remains Unsupported.
 
+## Import the real Store projection proof
+
+[projection.md](materials/projection.md) adds a third, independent diagnostic leaf.
+It checks eight clauses: receipt identity, lazy startup, fixed-root challenge,
+ordinary-process reads, untouched file, read-only Store boundary, explicit unimplemented
+scope, and retained raw artifacts. It does **not** satisfy Workspace W2/W3/W4.
+
+Use [projection.mjs](tools/projection.mjs) with a closed baseline and the retained
+four-case Store smoke directory. It copies the baseline into a **new** directory,
+embeds five original JSON artifacts, and retains source/time attribution separately.
+This is an evidence import, not a fresh product test; existing rows are not updated.
+
+```powershell
+node tools/verification/native-route/tools/projection.mjs <baseline.sqlite> <retained-store-smoke-directory> <full-probe-source-commit> <new-output-directory>
+node tools/verification/native-route/tools/projection.mjs --audit <new-output-directory>/snapshot.sqlite
+node tools/verification/native-route/tools/projection-test.mjs <retained-store-smoke-directory> <new-output-directory>/snapshot.sqlite
+```
+
+The separate read-only audit recomputes embedded artifact hashes and all parsed facts;
+the SQL leaf checks facts and presence, not arbitrary producer honesty. Run the audit
+before leaf verification and after extracting an archived snapshot. No local projection
+path needs to remain mounted. The existing harness's success includes its on-disk
+untouched-file assertion, not a fresh disk inspection during import.
+
+Submit/prepare/run projection material with its candidates/reviews using the pinned
+engine, just as for the other leaves. The checked-in
+[three-leaf material](materials/tree-projection.json) names the retained round-57
+snapshot. Use the **tree_spec_id returned by prepare**, not the proposed name.
+For new evidence, submit a new target; never overwrite old tree/run identities.
+The mixed-source tree deliberately has no single subject.commit: each source is in
+the snapshot/import receipt. Preserve both read times in reports.
+
+The three leaf archives include materials and snapshot bytes. Generated aggregate
+reports have neither prepare.material_id nor data_source.sha256 in this engine:
+keep/verify their normal report/spec archive, and distribute it beside the leaves.
+Do not fabricate those fields to force --with materials,snapshot on the aggregate.
+
+Round-57 [results and limits](../../../core/docs/issues/352/NATIVE-VERIFIER-PROJECTION-2026-11-01.md)
+record 19 parser/audit checks, 25 synthetic cases and the three-leaf FAIL.
+When a projection table exists, counterexamples.mjs adds ten cases (positive,
+P1–P8 and empty); older snapshots retain the original 15-case behavior.
+
 ## Local results
 
 The [real Store read-only ProjFS proof](../../../core/docs/issues/352/PROJFS-STORE-READ-2026-11-01.md) is a separate diagnostic milestone. It is not the Workspace read/write/capture proof required by the frozen W2/W3/W4 criteria; do not promote those rows from NOT_RUN using the read-only result.

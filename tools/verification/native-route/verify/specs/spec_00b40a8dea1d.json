@@ -1,0 +1,285 @@
+{
+  "contract_version": "1.2",
+  "spec_id": "spec_00b40a8dea1d",
+  "spec_version": 1,
+  "title": "prepared spec",
+  "domain": "prepared",
+  "created": "2026-11-01T12:56:27.304Z",
+  "runtime_min": "1",
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1.2"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-11-01T12:56:27.286Z"
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "W1 ProjFS libraryPresent、driverPresent、l",
+      "severity": "S1",
+      "source_clause": "W1 ProjFS libraryPresent、driverPresent、libraryLoaded 均为1，预检status为api-load-candidate且退出码为0。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "preflight",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "status",
+                "op": "=",
+                "value": "api-load-candidate"
+              },
+              {
+                "col": "library_present",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "driver_present",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "library_loaded",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "exit_code",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "workspace.md#W1",
+        "quote": "W1 ProjFS libraryPresent、driverPresent、libraryLoaded 均为1，预检status为api-load-candidate且退出码为0。"
+      }
+    },
+    {
+      "id": "V2",
+      "role": "assert",
+      "title": "W2 原生Workspace活目录普通进程读写删改证明必须具有PASS回执，不得",
+      "severity": "S1",
+      "source_clause": "W2 原生Workspace活目录普通进程读写删改证明必须具有PASS回执，不得用SDK文件操作替代。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "receipts",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "id",
+                "op": "=",
+                "value": "workspace-live"
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "exit_code",
+                    "op": "=",
+                    "value": 0
+                  },
+                  {
+                    "col": "status",
+                    "op": "=",
+                    "value": "PASS"
+                  },
+                  {
+                    "col": "failures",
+                    "op": "=",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "col": "passes",
+                "op": ">",
+                "value": 0
+              },
+              {
+                "col": "command",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "receipt_sha256",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "workspace.md#W2",
+        "quote": "W2 原生Workspace活目录普通进程读写删改证明必须具有PASS回执，不得用SDK文件操作替代。"
+      }
+    },
+    {
+      "id": "V3",
+      "role": "assert",
+      "title": "W3 原生Workspace捕获写回单个Commit并重开核对证明必须具有PAS",
+      "severity": "S1",
+      "source_clause": "W3 原生Workspace捕获写回单个Commit并重开核对证明必须具有PASS回执，不得用re-Init或fs.apply伪装。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "receipts",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "id",
+                "op": "=",
+                "value": "workspace-commit"
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "exit_code",
+                    "op": "=",
+                    "value": 0
+                  },
+                  {
+                    "col": "status",
+                    "op": "=",
+                    "value": "PASS"
+                  },
+                  {
+                    "col": "failures",
+                    "op": "=",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "col": "passes",
+                "op": ">",
+                "value": 0
+              },
+              {
+                "col": "command",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "receipt_sha256",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "workspace.md#W3",
+        "quote": "W3 原生Workspace捕获写回单个Commit并重开核对证明必须具有PASS回执，不得用re-Init或fs.apply伪装。"
+      }
+    },
+    {
+      "id": "V4",
+      "role": "assert",
+      "title": "W4 保持可写句柄或映射跨capture和stop的生命周期证明必须具有PASS",
+      "severity": "S1",
+      "source_clause": "W4 保持可写句柄或映射跨capture和stop的生命周期证明必须具有PASS回执；未实现或未验证必须保持非PASS。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "receipts",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "id",
+                "op": "=",
+                "value": "workspace-lifecycle"
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "exit_code",
+                    "op": "=",
+                    "value": 0
+                  },
+                  {
+                    "col": "status",
+                    "op": "=",
+                    "value": "PASS"
+                  },
+                  {
+                    "col": "failures",
+                    "op": "=",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "col": "passes",
+                "op": ">",
+                "value": 0
+              },
+              {
+                "col": "command",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "receipt_sha256",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "workspace.md#W4",
+        "quote": "W4 保持可写句柄或映射跨capture和stop的生命周期证明必须具有PASS回执；未实现或未验证必须保持非PASS。"
+      }
+    }
+  ],
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "materials_sha256": "e9b22f672ff571e319da57d0812f422845bd82b499cefbf85f23f26d7742ccd5"
+}
