@@ -39,7 +39,7 @@ fn public_overlay_bridge_preserves_capture_and_open_custody() {
     s.capture().unwrap();
     assert_eq!(
         s.commit(CommitScope::Published).unwrap_err().status as u32,
-        0xc00000aa
+        0x80000011
     );
     s.write(h, 0, b"after!", false, false).unwrap();
     assert_eq!(s.captured_bytes("/capture.txt").unwrap(), b"before capture");
@@ -324,5 +324,175 @@ fn unimplemented_commit_guarantees_refuse_before_capture_or_history_effect() {
     println!(
         "COMMIT_SCOPE_UNIT_PASS refusal_before_effect=true published_route_kept=true root={}",
         root.display()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn captured_commit_allows_later_published_writes_before_install() {
+    use layerfs_history::HistoryCatalog;
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
+    use layerfs_native_probe::store_fixture::{BINDING, CURSOR};
+    use layerfs_persistence::{Handles, PersistenceConfig, SqlitePersistenceProfile};
+    use std::{
+        sync::mpsc,
+        time::{Duration, Instant},
+    };
+    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tmp")
+        .canonicalize()
+        .unwrap();
+    let root = parent.join(format!(
+        "native-concurrent-unit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut s = Session::create(&root).unwrap();
+    let (h, _) = s.create_file("/concurrent.txt").unwrap();
+    s.write(h, 0, b"before commit", false, false).unwrap();
+    // Public writer admission is a test-only interleaving control, not normal wiring.
+    let gate = Handles::open_writable(
+        PersistenceConfig::sqlite(root.join("store.sqlite"))
+            .with_sqlite_profile(SqlitePersistenceProfile::Disposable),
+        BINDING,
+        CURSOR,
+    )
+    .unwrap();
+    let lane = gate.history.publish_lane().unwrap();
+    let work = s.begin_commit(CommitScope::Published).unwrap();
+    assert_eq!(
+        s.begin_commit(CommitScope::Published).err().unwrap().status as u32,
+        0x80000011
+    );
+    assert_eq!(s.capture().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.finish().unwrap_err().status as u32, 0x80000011);
+    let (tx, rx) = mpsc::sync_channel(1);
+    let worker = std::thread::spawn(move || {
+        let result = work.run();
+        if let Err(original) = tx.send(result) {
+            std::mem::forget(original.0);
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let captured = loop {
+        let state = s.frontier().unwrap();
+        if state.captured.is_some() {
+            break state;
+        }
+        assert!(Instant::now() < deadline, "capture readiness deadline");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(
+        !worker.is_finished(),
+        "lane must hold publication until explicit release"
+    );
+    s.write(h, 0, b"during commit", false, false).unwrap();
+    let (late, _) = s.create_file("/late-during.txt").unwrap();
+    s.write(late, 0, b"new generation", false, false).unwrap();
+    s.close_file(late).unwrap();
+    let later = s.frontier().unwrap();
+    assert_eq!(later.captured, captured.captured);
+    assert!(later.revision > captured.revision);
+    assert_eq!(s.read(h, 0, 100).unwrap(), b"during commit");
+    drop(lane);
+    drop(gate);
+    let completion = rx
+        .recv_timeout(Duration::from_secs(15))
+        .expect("Commit completion deadline");
+    worker.join().unwrap();
+    // The worker has finished but its exact result is not yet returned to Session.
+    // Close/re-capture/another Commit still cannot steal this ownership window.
+    assert_eq!(
+        s.begin_commit(CommitScope::Published).err().unwrap().status as u32,
+        0x80000011
+    );
+    assert_eq!(s.capture().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(s.finish().unwrap_err().status as u32, 0x80000011);
+    assert!(s.complete_commit(completion).unwrap());
+    assert_eq!(
+        s.committed_bytes(0, "/concurrent.txt").unwrap(),
+        b"before commit"
+    );
+    assert_eq!(
+        s.committed_bytes(0, "/late-during.txt").unwrap_err().status as u32,
+        0xc0000034
+    );
+    assert_eq!(s.read(h, 0, 100).unwrap(), b"during commit");
+    let installed = s.frontier().unwrap();
+    assert!(installed.captured.is_none());
+    assert!(installed.dirty_inodes > 0);
+    s.write(h, 0, b"after! commit", false, false).unwrap();
+    assert!(s.commit(CommitScope::Published).unwrap());
+    assert_eq!(
+        s.committed_bytes(1, "/concurrent.txt").unwrap(),
+        b"after! commit"
+    );
+    assert_eq!(
+        s.committed_bytes(1, "/late-during.txt").unwrap(),
+        b"new generation"
+    );
+    assert_eq!(
+        s.committed_bytes(0, "/concurrent.txt").unwrap(),
+        b"before commit"
+    );
+    s.close_file(h).unwrap();
+    s.finish().unwrap();
+    println!("CONCURRENT_COMMIT_UNIT_PASS capture_revision={} later_revision={} old_root_fixed=true install_kept_later=true root={}",captured.revision,later.revision,root.display());
+}
+
+#[cfg(windows)]
+#[test]
+fn abandoned_or_misrouted_commit_keeps_admission_and_original_result() {
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
+    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tmp")
+        .canonicalize()
+        .unwrap();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let mut original =
+        Session::create(&parent.join(format!("native-custody-a-{}-{stamp}", std::process::id())))
+            .unwrap();
+    let mut other =
+        Session::create(&parent.join(format!("native-custody-b-{}-{stamp}", std::process::id())))
+            .unwrap();
+    let work = original.begin_commit(CommitScope::Published).unwrap();
+    let before = original.frontier().unwrap();
+    let completion = work.run(); // UpToDate: no fixture mutation required to exercise ownership.
+    assert!(other.complete_commit(completion).is_err());
+    assert_eq!(original.frontier().unwrap(), before);
+    assert_eq!(original.finish().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(
+        original
+            .begin_commit(CommitScope::Published)
+            .err()
+            .unwrap()
+            .status as u32,
+        0x80000011
+    );
+    assert!(
+        other.finish().is_err(),
+        "receiver must keep the foreign completion, not discard it"
+    );
+    // Both stores intentionally remain in retained failure custody. This diagnostic
+    // performs no guessed recovery, and process exit releases OS resources.
+    std::mem::forget(original);
+    std::mem::forget(other);
+    let mut dropped =
+        Session::create(&parent.join(format!("native-custody-c-{}-{stamp}", std::process::id())))
+            .unwrap();
+    let before = dropped.frontier().unwrap();
+    drop(dropped.begin_commit(CommitScope::Published).unwrap());
+    assert_eq!(dropped.frontier().unwrap(), before);
+    assert_eq!(dropped.capture().unwrap_err().status as u32, 0x80000011);
+    assert_eq!(dropped.finish().unwrap_err().status as u32, 0x80000011);
+    std::mem::forget(dropped);
+    println!(
+        "COMMIT_CUSTODY_UNIT_PASS dropped_work_retains_admission=true foreign_result_retained=true"
     );
 }

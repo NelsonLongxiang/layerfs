@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <atomic>
+#include <thread>
 #include <winfsp/winfsp.h>
 #include <sddl.h>
 struct Api {
@@ -50,6 +52,7 @@ struct Bridge {
   (UINT32, PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *published_byte)(PCWSTR, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *latest_byte)(PCWSTR, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *frontier)(UINT64 *, INT64 *, UINT64 *) = nullptr;
   INT32(__cdecl *observe)() = nullptr;
   INT32(__cdecl *finish)() = nullptr;
 } bridge;
@@ -434,13 +437,16 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, committed, lf_committed);
   LOAD(bridge, published_byte, lf_published_byte);
   LOAD(bridge, latest_byte, lf_latest_byte);
+  LOAD(bridge, frontier, lf_frontier);
   LOAD(bridge, observe, lf_observe);
   LOAD(bridge, finish, lf_finish);
 #undef LOAD
   WCHAR store[32768];
   swprintf_s(store, L"%s\\store", argv[3]);
   cache_mode = argc == 6 && wcscmp(argv[5], L"--cache-boundary") == 0;
-  const bool rebound = argc == 6 && !cache_mode;
+  const bool concurrent_mode =
+      argc == 6 && wcscmp(argv[5], L"--concurrent") == 0;
+  const bool rebound = argc == 6 && !cache_mode && !concurrent_mode;
   auto started =
       rebound ? bridge.reopen(argv[5], length(argv[5]), store, length(store))
               : bridge.start(store, length(store));
@@ -493,12 +499,124 @@ int wmain(int argc, wchar_t **argv) {
   bool done = false, captured = false, checked = false;
   bool committed1 = false, committed2 = false, unchanged = false;
   unsigned cache_phase = 0;
+  std::thread commit_worker;
+  std::atomic<bool> worker_done{false};
+  INT32 worker_status = STATUS_PENDING;
+  UINT32 worker_changed = 0;
+  bool worker_started = false, concurrent_captured = false,
+       concurrent_written = false;
+  UINT64 captured_generation = 0;
+  INT64 captured_revision = 0;
   if (status >= 0 && mark(argv[3], L"ready")) {
     puts(rebound ? "NATIVE_REBOUND_READY existing_store=true init=false"
                  : "NATIVE_OVERLAY_READY");
     fflush(stdout);
     auto deadline = GetTickCount64() + 45000;
     while (GetTickCount64() < deadline) {
+      if (concurrent_mode) {
+        if (!worker_started && exists(argv[3], L"concurrent-start")) {
+          worker_started = true;
+          commit_worker = std::thread([&] {
+            worker_status = bridge.commit_scoped(1, &worker_changed);
+            worker_done.store(true, std::memory_order_release);
+          });
+        }
+        if (worker_started && !concurrent_captured) {
+          UINT64 active = 0, capture_now = 0;
+          INT64 revision = 0;
+          if (bridge.frontier(&capture_now, &revision, &active) < 0)
+            break;
+          if (capture_now) {
+            if (worker_done.load(std::memory_order_acquire))
+              break;
+            UINT32 sentinel = 0xa5a5a5a5u;
+            if (bridge.commit_scoped(1, &sentinel) != STATUS_DEVICE_BUSY ||
+                sentinel != 0xa5a5a5a5u ||
+                bridge.capture() != STATUS_DEVICE_BUSY ||
+                bridge.finish() != STATUS_DEVICE_BUSY)
+              break;
+            captured_generation = capture_now;
+            captured_revision = revision;
+            concurrent_captured = true;
+            printf(
+                "CONCURRENT_CAPTURE generation=%llu revision=%lld active=%llu "
+                "duplicate_commit=Busy capture=Busy close=Busy\n",
+                capture_now, revision, active);
+            fflush(stdout);
+            if (!mark(argv[3], L"concurrent-captured"))
+              break;
+          }
+        }
+        if (concurrent_captured && !concurrent_written &&
+            exists(argv[3], L"concurrent-writes")) {
+          UINT64 active = 0, capture_now = 0;
+          INT64 revision = 0;
+          UINT32 current = 0;
+          if (bridge.frontier(&capture_now, &revision, &active) < 0 ||
+              capture_now != captured_generation ||
+              revision <= captured_revision ||
+              worker_done.load(std::memory_order_acquire) ||
+              bridge.published_byte(L"\\concurrent.txt", 15, &current) < 0 ||
+              current != 'd')
+            break;
+          concurrent_written = true;
+          printf("CONCURRENT_WRITES_CONFIRMED captured=%llu active=%llu "
+                 "capture_revision=%lld later_revision=%lld "
+                 "commit_still_running=true\n",
+                 capture_now, active, captured_revision, revision);
+          fflush(stdout);
+          if (!mark(argv[3], L"concurrent-writes-seen"))
+            break;
+        }
+        if (concurrent_written && !committed1 &&
+            worker_done.load(std::memory_order_acquire)) {
+          commit_worker.join();
+          if (worker_status < 0 || worker_changed != 1)
+            break;
+          BYTE bytes[128]{};
+          UINT32 count = 0;
+          constexpr char expected[] = "before commit";
+          if (bridge.committed(0, L"\\concurrent.txt", 15, bytes, sizeof(bytes),
+                               &count) < 0 ||
+              count != sizeof(expected) - 1 || memcmp(bytes, expected, count))
+            break;
+          if (bridge.committed(0, L"\\late-during.txt", 16, bytes,
+                               sizeof(bytes),
+                               &count) != STATUS_OBJECT_NAME_NOT_FOUND)
+            break;
+          UINT32 current = 0;
+          if (bridge.published_byte(L"\\concurrent.txt", 15, &current) < 0 ||
+              current != 'd')
+            break;
+          committed1 = true;
+          puts("CONCURRENT_INSTALL_PASS old_commit_fixed=true "
+               "later_live_preserved=true");
+          fflush(stdout);
+          if (!mark(argv[3], L"concurrent-installed"))
+            break;
+        }
+        if (committed1 && !committed2 &&
+            exists(argv[3], L"concurrent-second")) {
+          UINT32 changed = 0;
+          if (bridge.commit_scoped(1, &changed) < 0 || changed != 1)
+            break;
+          BYTE bytes[128]{};
+          UINT32 count = 0;
+          constexpr char expected[] = "after! commit";
+          if (bridge.committed(1, L"\\concurrent.txt", 15, bytes, sizeof(bytes),
+                               &count) < 0 ||
+              count != sizeof(expected) - 1 || memcmp(bytes, expected, count))
+            break;
+          constexpr char late[] = "new generation";
+          if (bridge.committed(1, L"\\late-during.txt", 16, bytes,
+                               sizeof(bytes), &count) < 0 ||
+              count != sizeof(late) - 1 || memcmp(bytes, late, count))
+            break;
+          committed2 = true;
+          if (!mark(argv[3], L"concurrent-second-done"))
+            break;
+        }
+      }
       if (cache_mode && cache_phase < 8) {
         WCHAR request[32], ack[32];
         swprintf_s(request, L"cache-%u", cache_phase);
@@ -568,7 +686,8 @@ int wmain(int argc, wchar_t **argv) {
           ++cache_phase;
         }
       }
-      if (!cache_mode && !rebound && !captured && exists(argv[3], L"capture")) {
+      if (!concurrent_mode && !cache_mode && !rebound && !captured &&
+          exists(argv[3], L"capture")) {
         if (bridge.capture() < 0)
           break;
         captured = true;
@@ -606,7 +725,8 @@ int wmain(int argc, wchar_t **argv) {
         if (!mark(argv[3], L"committed-one"))
           break;
       }
-      if (committed1 && !committed2 && exists(argv[3], L"commit-two")) {
+      if (!concurrent_mode && committed1 && !committed2 &&
+          exists(argv[3], L"commit-two")) {
         BYTE old[128]{};
         UINT32 old_count = 0;
         constexpr char before[] = "after! capture";
@@ -648,6 +768,13 @@ int wmain(int argc, wchar_t **argv) {
     }
   } else
     fprintf(stderr, "mount/start NTSTATUS=%08lx\n", static_cast<ULONG>(status));
+  if (commit_worker.joinable()) {
+    // Only the diagnostic lane-holder consumes this release; no mutation
+    // replay.
+    if (!exists(argv[3], L"lane-release"))
+      mark(argv[3], L"lane-release");
+    commit_worker.join();
+  }
   api.stop(fs);
   api.unmount(fs);
   api.destroy(fs);
@@ -661,14 +788,18 @@ int wmain(int argc, wchar_t **argv) {
     FreeLibrary(bridge.dll);
     FreeLibrary(api.dll);
   } // failure keeps original Rust owner state until process ends
-  puts("NOT_RUN product_Workspace concurrent_commit mapped_lifecycle "
+  puts("NOT_RUN product_Workspace general_concurrency mapped_lifecycle "
        "full_repository");
   return done && closed == 0 && !callback_error && (cache_mode || unchanged) &&
-                 (cache_mode ? (cache_phase == 8 && creates && writes)
+                 (concurrent_mode
+                      ? (concurrent_captured && concurrent_written &&
+                         committed1 && committed2)
+                      : (cache_mode
+                             ? (cache_phase == 8 && creates && writes)
                              : (rebound ? (opens && reads)
                                         : (captured && checked && committed1 &&
                                            committed2 && creates && reads &&
-                                           writes && renames && deletes)))
+                                           writes && renames && deletes))))
              ? 0
              : 1;
 }

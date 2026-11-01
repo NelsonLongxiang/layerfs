@@ -1,10 +1,13 @@
 //! Diagnostic adapter over the existing bound Workspace, not another file store.
 use crate::store_fixture::{branch, Fixture, BINDING, CURSOR};
 use layerfs_content::{filesystem::PathName, ContentError};
-use layerfs_history::{CommitId, CommitOutcome, CommitVia, HistoryCatalog};
+use layerfs_history::CommitId;
+#[path = "native_commit.rs"]
+mod commit;
+pub use commit::{CommitCompletion, CommitWork};
 use layerfs_overlay::{Capture, CapturedReader, Inode, KernelDirectory, KernelMount, OpenFile};
 use layerfs_store_service::{
-    store::{BoundWorkspace, CommitFailure, CommitOptions},
+    store::{BoundWorkspace, CommitFailure},
     write::mutation::Mutation,
     StoreService,
 };
@@ -137,6 +140,8 @@ pub struct Session {
     pub publications: u64,
     store_path: PathBuf,
     commits: Vec<CommitId>,
+    pending_commit: Option<u64>,
+    retained_completions: Vec<CommitCompletion>,
     retained_commit: Option<Box<CommitFailure>>,
     retained_success: Option<Box<layerfs_store_service::store::CommitSuccess>>,
 }
@@ -196,6 +201,8 @@ impl Session {
             publications: 0,
             store_path,
             commits: Vec::new(),
+            pending_commit: None,
+            retained_completions: Vec::new(),
             retained_commit: None,
             retained_success: None,
         })
@@ -687,8 +694,11 @@ impl Session {
         }
     }
     pub fn capture(&mut self) -> Result<()> {
+        if self.pending_commit.is_some() {
+            return Err(refused(0x80000011, "Commit already admitted"));
+        }
         if self.capture.is_some() {
-            return Err(refused(0xc00000aa, "capture already held"));
+            return Err(refused(0x80000011, "capture already held"));
         }
         let op = self.bound.operation().map_err(workspace_error)?;
         let capture = op.overlay().capture(self.bound.route()).map_err(failed)?;
@@ -775,129 +785,6 @@ impl Session {
         println!("DIAGNOSTIC_CAPTURE_RELEASED publication=false");
         Ok(())
     }
-    /// One published-frontier Commit, or a before-effect refusal of a stronger guarantee.
-    /// No section notification/fence is exposed by the installed native API: descriptor
-    /// counts and DisableCache cannot establish application-visible mapped-page capture.
-    pub fn commit(&mut self, scope: CommitScope) -> Result<bool> {
-        if scope == CommitScope::ApplicationVisible {
-            return Err(refused(0xc00000bb, "application-visible cache/section capture is not supported; explicitly request published-frontier semantics"));
-        }
-        if self.capture.is_some() {
-            return Err(refused(
-                0xc00000aa,
-                "diagnostic capture still owned; release explicitly first",
-            ));
-        }
-        if self.retained_commit.is_some() || self.retained_success.is_some() {
-            return Err(failed("prior Commit custody retained"));
-        }
-        let before = self.bound.snapshot().map_err(workspace_error)?;
-        let success = match self.bound.commit_captured(&CommitOptions {
-            force: false,
-            message: Some("native Windows published Overlay frontier".into()),
-        }) {
-            Ok(success) => success,
-            Err(original) => {
-                let error = failed(format!(
-                    "{original}; phase={:?} locally_settled={} published={:?}",
-                    original.phase, original.locally_settled, original.published
-                ));
-                self.retained_commit = Some(original); // no guessed retry or cleanup
-                return Err(error);
-            }
-        };
-        if success
-            .namespace
-            .as_ref()
-            .is_some_and(|n| n.retained() || n.release_error.is_some())
-        {
-            self.retained_success = Some(Box::new(success));
-            return Err(failed(
-                "Commit published with retained construction custody",
-            ));
-        }
-        let checked = (|| {
-            let changed = match &success.history {
-                Some(CommitOutcome::Committed { record, .. }) => {
-                    if success.capture.is_none()
-                        || success.namespace.as_ref().is_none_or(|n| n.work.is_none())
-                    {
-                        return Err(failed("missing captured namespace construction receipt"));
-                    }
-                    if record.meta.via != CommitVia::Workspace
-                        || record.parent != before.branch.head_commit
-                    {
-                        return Err(failed("unexpected Workspace Commit provenance/parent"));
-                    }
-                    let handles = layerfs_persistence::Handles::open_read_only(
-                        layerfs_persistence::PersistenceConfig::sqlite(&self.store_path)
-                            .with_sqlite_profile(
-                                layerfs_persistence::SqlitePersistenceProfile::Disposable,
-                            ),
-                        BINDING,
-                        CURSOR,
-                    )
-                    .map_err(failed)?;
-                    let stored = handles
-                        .history
-                        .commit(record.id)
-                        .map_err(failed)?
-                        .ok_or_else(|| failed("published Commit absent on independent reopen"))?;
-                    let branch = handles
-                        .history
-                        .branch_snapshot(branch())
-                        .map_err(failed)?
-                        .ok_or_else(|| failed("published Branch absent"))?;
-                    if stored != **record
-                        || branch.branch.head_commit != Some(record.id)
-                        || branch.effective_root != record.root
-                    {
-                        return Err(failed(
-                            "independent history reopen differs from publication",
-                        ));
-                    }
-                    println!("OVERLAY_COMMIT kind=Committed scope=published id={:?} root={:?} parent={:?} via=Workspace saved_bytes={} open_handles={}", record.id, record.root, record.parent, success.saved.stored_bytes, self.handles.len());
-                    self.commits.push(record.id);
-                    true
-                }
-                Some(CommitOutcome::UpToDate { head, root }) => {
-                    if *head != before.branch.head_commit || *root != before.effective_root {
-                        return Err(failed("unexpected UpToDate identity"));
-                    }
-                    println!(
-                        "OVERLAY_COMMIT kind=UpToDate scope=published head={head:?} root={root:?} new_commit=false"
-                    );
-                    false
-                }
-                None => {
-                    return Err(failed("conflicted Commit, not a publication"));
-                }
-            };
-            let op = self.bound.operation().map_err(workspace_error)?;
-            let state = op.overlay().state(self.bound.route()).map_err(failed)?;
-            if state.captured.is_some()
-                || state.base_root
-                    != self
-                        .bound
-                        .snapshot()
-                        .map_err(workspace_error)?
-                        .effective_root
-                        .to_bytes()
-            {
-                return Err(failed("known Commit not installed locally"));
-            }
-            println!(
-                "OVERLAY_COMMIT_INSTALLED active={} revision={} captures_released=true",
-                state.active.number(),
-                state.revision
-            );
-            Ok(changed)
-        })();
-        if checked.is_err() {
-            self.retained_success = Some(Box::new(success));
-        }
-        checked
-    }
     /// Reopens an actual immutable Commit using its retained History id.
     pub fn committed_bytes(&self, index: usize, path: &str) -> Result<Vec<u8>> {
         validate(path)?;
@@ -918,7 +805,13 @@ impl Session {
         saved.read(name, 0, entry.size as u32).map_err(failed)
     }
     pub fn finish(&mut self) -> Result<()> {
-        if self.retained_commit.is_some() || self.retained_success.is_some() {
+        if self.pending_commit.is_some() {
+            return Err(refused(0x80000011, "Commit still owns the bound Workspace"));
+        }
+        if self.retained_commit.is_some()
+            || self.retained_success.is_some()
+            || !self.retained_completions.is_empty()
+        {
             return Err(failed("original Commit custody retained; no close/replay"));
         }
         if !self.handles.is_empty() {

@@ -188,11 +188,12 @@ root file; actual nested Commit construction belongs to CapturedNamespace.
 This is a non-shipped integration slice, not the product Workspace API. Exact
 UTF-8 nested paths, mkdir, cross-directory rename, rmdir and handle-scoped directory
 listing use existing Workspace ports. Links, complete Windows metadata/security
-changes, concurrent callbacks/capture and
-mapped writes remain unqualified. A diagnostic bridge mutex serializes requests
-and control (never the product SQL lock across Store I/O); replace this admission
-before production. The existing Mutation reply-attempt boundary is reused; full
-native callback reply/capture ordering is not claimed by the sequential proof.
+changes and mapped writes remain unqualified. Ordinary file callbacks and short
+control bookkeeping still serialize through the diagnostic Session mutex; the
+long captured Commit construction/Save/publication now runs outside that mutex.
+The deterministic post-capture mutation proof below covers this one interleaving,
+not arbitrary concurrent callbacks or every native callback reply/capture order.
+The existing Mutation reply-attempt boundary is reused.
 Unknown owner errors latch refusal and retain custody instead of cleanup/replay.
 
 The independent diagnostic capture is explicitly released/resolved with no history
@@ -214,7 +215,7 @@ for these sequential, non-overlapping processes; concurrent identity is not clai
 No fs.apply, re-Init after mutation, native-tree scan/copy, manual SQL or alternate
 content encoding is used. A failed Commit retains its exact original failure;
 a failed post-publication audit retains the known success receipt too. The host
-never retries an uncertain publication. Product Workspace API, concurrent Commit,
+never retries an uncertain publication. Product Workspace API, general concurrency,
 mapped writes and full-repository qualification remain NOT_RUN.
 
 ## WinFsp cache / writable-view boundary
@@ -294,3 +295,43 @@ boundary. This is not a claim that no Windows mechanism could ever solve the gap
 The implementation rejects an unimplemented stronger guarantee. It does not prevent
 mapped stores, synchronize dirty mappings, improve crash recovery or qualify the
 product Workspace. Revisit those capabilities only with their own executable proof.
+
+## Published Commit with post-capture native mutations
+
+Commit admission returns one owned CommitWork containing the bound Workspace and
+its before-snapshot; running it consumes the work and returns one CommitCompletion.
+Only the admitting Session can settle that original result. The FFI releases the
+Session mutex during the unchanged commit_captured call, then reacquires it for
+settlement. Ordinary file operations can proceed while that Commit owns its captured
+frontier. Another Commit, explicit capture or terminal close returns STATUS_DEVICE_BUSY
+(0x80000011) until settlement, including after the worker has completed but before its
+result is settled. Unknown/panicked/foreign results retain original ownership instead
+of replay or guessed cleanup. Dropping work does not silently cancel its admission.
+
+The previous diagnostic 0xc00000aa used as Busy was incorrect (Windows defines it
+as STATUS_INSTRUCTION_MISALIGNMENT). Current code and assertions use the actual
+STATUS_DEVICE_BUSY; historical receipts remain unchanged.
+
+Run the first-party integration test binary under <=120 seconds, and native proof:
+
+```powershell
+node tools/winfsp-concurrent-test.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <target>/debug/layerfs-projfs-probe.exe <fresh-output>
+```
+
+A guarded child opens the existing Disposable Store and holds its public History
+publication lane for at most 15 seconds. No new product lock, test hook or alternate
+constructor is added. This is a deliberate test-only Store-writer contention control,
+not normal wiring or a performance measurement; writable open still pays its ordinary
+setup. The unchanged Commit captures, then cannot publish until this lane is released.
+The host observes capture through public Overlay state, not a guessed sleep.
+
+While that first Commit is pending, ordinary Windows calls write the already-open file
+and create another file. The host confirms active generation/revision progressed while
+the captured generation stayed fixed and the worker had not finished. Only then does
+the test release the lane. First Commit bytes remain old; known Install keeps the later
+active bytes and creation. A second explicit Commit includes them. An independent
+read-only process checks both exact historical versions and base membership.
+
+This qualifies a bounded one-Workspace/one-Commit-versus-mutation interleaving, not
+multiple concurrent publishers, arbitrary callback concurrency, cache/section drain,
+crash recovery or ApplicationVisible semantics. No forced caller unmap or flush is used.

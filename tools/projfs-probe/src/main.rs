@@ -74,6 +74,22 @@ fn main() {
             }
             return;
         }
+        if args.len() == 2 && args[0] == "hold-lane" {
+            if let Err(error) = layerfs_native_probe::commit_hold::hold(Path::new(&args[1])) {
+                eprintln!("LANE_HOLD_FAIL {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        if args.len() == 2 && args[0] == "verify-concurrent" {
+            if let Err(error) =
+                layerfs_native_probe::commit_reopen::verify_concurrent(Path::new(&args[1]))
+            {
+                eprintln!("REOPEN_CONCURRENT_FAIL {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
         if args.len() == 2 && args[0] == "verify-cache" {
             if let Err(error) =
                 layerfs_native_probe::commit_reopen::verify_cache(Path::new(&args[1]))

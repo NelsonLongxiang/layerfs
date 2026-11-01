@@ -11,8 +11,8 @@ use std::{
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 static RETAINED: AtomicBool = AtomicBool::new(false);
 fn call(action: impl FnOnce(&mut Session) -> Result<(), Error>) -> i32 {
-    // ponytail: serializes this diagnostic across callbacks/control, not the
-    // product owner lock. Replace with request-local ownership before production.
+    // Ordinary callbacks and short control bookkeeping serialize here, never
+    // the captured Commit construction/Save/publication. Product SQL locks stay short.
     let result = catch_unwind(AssertUnwindSafe(|| {
         let mut state = SESSION
             .get_or_init(|| Mutex::new(None))
@@ -296,13 +296,38 @@ pub extern "C" fn lf_release_capture() -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_commit_scoped(scope: u32, changed: *mut u32) -> i32 {
-    call(|s| {
+    let mut admitted = None;
+    let status = call(|s| {
         if changed.is_null() {
             return Err(failed("null commit output"));
         }
-        let value = s.commit(CommitScope::try_from(scope)?)?;
+        admitted = Some(s.begin_commit(CommitScope::try_from(scope)?)?);
+        Ok(())
+    });
+    if status != 0 {
+        return status;
+    }
+    // Own the entire result while the Session lock is released. File callbacks
+    // may run on the same bound Workspace; close/another Commit cannot steal it.
+    let mut completion = Some(admitted.expect("successful admission").run());
+    let status = call(|s| {
+        let value = s.complete_commit(completion.take().expect("one completion"))?;
         unsafe { put(changed, u32::from(value)) }
-    })
+    });
+    if let Some(original) = completion {
+        // An unrelated callback may already have retained an unknown outcome.
+        // Do not let that latch silently drop this independently completed work.
+        let mut original = Some(original);
+        if let Ok(mut slot) = SESSION.get_or_init(|| Mutex::new(None)).lock() {
+            if let Some(session) = slot.as_mut() {
+                session.retain_completion(original.take().expect("one original"));
+            }
+        }
+        if let Some(kept) = original {
+            std::mem::forget(kept);
+        }
+    }
+    status
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_committed(
@@ -339,6 +364,27 @@ pub unsafe extern "C" fn lf_latest_byte(ptr: *const u16, len: u32, out: *mut u32
             .first()
             .ok_or_else(|| failed("empty latest snapshot"))?;
         unsafe { put(out, u32::from(byte)) }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_frontier(
+    captured: *mut u64,
+    revision: *mut i64,
+    active: *mut u64,
+) -> i32 {
+    call(|s| {
+        if captured.is_null() || revision.is_null() || active.is_null() {
+            return Err(failed("null frontier output"));
+        }
+        let state = s.frontier()?;
+        unsafe {
+            put(
+                captured,
+                state.captured.map(|g| g.number() as u64).unwrap_or(0),
+            )?;
+            put(revision, state.revision)?;
+            put(active, state.active.number() as u64)
+        }
     })
 }
 #[no_mangle]

@@ -189,3 +189,84 @@ pub fn verify_cache(path: &Path) -> Result<(), String> {
     );
     Ok(())
 }
+
+/// Read-only historical check for deterministic native post-capture mutation.
+pub fn verify_concurrent(path: &Path) -> Result<(), String> {
+    let handles = Handles::open_read_only(
+        PersistenceConfig::sqlite(path).with_sqlite_profile(SqlitePersistenceProfile::Disposable),
+        BINDING,
+        CURSOR,
+    )
+    .map_err(|e| e.to_string())?;
+    let page = handles
+        .history
+        .commit_history(&CommitHistoryRequest {
+            branch: branch(),
+            start: None,
+            cursor: None,
+            limit: 10,
+        })
+        .map_err(|e| e.to_string())?;
+    if page.records.len() != 2 || page.continuation.is_some() {
+        return Err("expected two concurrent-fixture Commits".into());
+    }
+    let latest = &page.records[0];
+    let first = &page.records[1];
+    if first.parent.is_some()
+        || latest.parent != Some(first.id)
+        || page
+            .records
+            .iter()
+            .any(|c| c.meta.via != CommitVia::Workspace)
+    {
+        return Err("concurrent-fixture history ancestry/provenance".into());
+    }
+    let head = handles
+        .history
+        .branch_snapshot(branch())
+        .map_err(|e| e.to_string())?
+        .ok_or("Branch absent")?;
+    if head.branch.head_commit != Some(latest.id) || head.effective_root != latest.root {
+        return Err("concurrent-fixture head mismatch".into());
+    }
+    drop(handles);
+    for (record, expected) in [
+        (first, b"before commit".as_slice()),
+        (latest, b"after! commit".as_slice()),
+    ] {
+        let mut saved = Saved::open_commit(path, BINDING, CURSOR, record.id)?;
+        if saved
+            .entry("concurrent.txt")?
+            .ok_or("concurrent file absent")?
+            .size
+            != expected.len() as u64
+            || saved.read("concurrent.txt", 0, expected.len() as u32)? != expected
+        {
+            return Err("captured old or later file bytes differ".into());
+        }
+        if record.id == first.id && saved.entry("late-during.txt")?.is_some() {
+            return Err("post-capture creation leaked into first Commit".into());
+        }
+        if record.id == latest.id
+            && (saved
+                .entry("late-during.txt")?
+                .ok_or("later created file absent")?
+                .size
+                != 14
+                || saved.read("late-during.txt", 0, 14)? != b"new generation")
+        {
+            return Err("later created file differs".into());
+        }
+        if saved.list("many")?.len() != 80
+            || saved.read("alpha.txt", 0, 28)? != b"old immutable Store version\n"
+        {
+            return Err("immutable base membership/content differs".into());
+        }
+    }
+    println!("REOPEN_CONCURRENT_PASS commits=2 old_commit_fixed=true later_creation=true head_exact=true readonly=true");
+    println!(
+        "REOPEN_CONCURRENT_IDS first={:?} second={:?}",
+        first.id, latest.id
+    );
+    Ok(())
+}
