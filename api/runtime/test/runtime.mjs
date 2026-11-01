@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const FAKE = fileURLToPath(new URL("../../agent/test/fixture/fake-native.cjs", import.meta.url));
 process.env.LAYERFS_NATIVE = FAKE;
@@ -14,7 +14,8 @@ for (const name of ["TRACE", "TRACE_STEP", "TRACE_START", "WORKER_ENDPOINT", "HO
   delete process.env[`DSH_LAYERFS_${name}`];
 }
 const { LayerFSRuntime } = await import("@layerfs/runtime");
-const native = (await import(FAKE)).default;
+// FAKE is a path (LAYERFS_NATIVE wants one); import() needs a URL, also on Windows
+const native = (await import(pathToFileURL(FAKE).href)).default;
 const selected = process.argv[2];
 const work = mkdtempSync(join(tmpdir(), "layerfs-runtime-"));
 const home = join(work, "home");
@@ -163,7 +164,9 @@ try {
     const before = native.calls.length;
     const state = await runtime.project.get_state("shop");
     assert.deepEqual(native.calls.slice(before), ["project.list_branches", "backend.store.project.get_history", "project.list_sandboxes", "sandbox.list_workspaces", "backend.daemon.workspace.get_storage"]);
-    assert.equal(native.args[before].storePath, join(work, "volumes", "vol-shop", "_data/global/store.sqlite"));
+    // the same layout, whatever separator the host's path joining produced
+    const slashed = (path) => path.replaceAll("\\", "/");
+    assert.equal(slashed(native.args[before].storePath), slashed(join(work, "volumes", "vol-shop", "_data/global/store.sqlite")));
     assert.deepEqual([state.kind, state.sandboxes.map((s) => s.id), state.sandboxes[0].workspaces[0].path, state.gone], ["ok", ["1"], "/workspaces/w1", []]);
     assert.deepEqual(await runtime.project.get_state("shop", state.version), { kind: "unchanged", version: state.version });
     // the client is kept between reads
@@ -172,6 +175,14 @@ try {
     // reclaim goes to the runtime's own native call
     await runtime.sandbox.reclaim("shop");
     assert.equal(native.calls.at(-1), "runtime.sandbox.reclaim");
+    // a route without a daemon (the Windows-native Store route) records no
+    // Sandbox: its Unsupported refusal draws History alone, not a failure
+    process.env.CLI_FAKE_REFUSE = "project.list_sandboxes";
+    process.env.CLI_FAKE_CODE = "Unsupported";
+    const withoutDaemon = await runtime.project.get_state("shop");
+    assert.deepEqual([withoutDaemon.kind, withoutDaemon.sandboxes, withoutDaemon.gone, withoutDaemon.version], ["ok", [], [], "h1"]);
+    delete process.env.CLI_FAKE_REFUSE;
+    delete process.env.CLI_FAKE_CODE;
     await runtime.close();
     assert.deepEqual(native.stores.at(-1)[0], "close", "close releases the clients");
   } else if (selected === "events") {
