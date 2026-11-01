@@ -10,7 +10,15 @@
       "sha256": "0e96fe4fb337eccdb04fb7b1c82d6638bbb43818b43ab8a939a34cfd9e0381c2"
     }
   ],
-  "orchestration": [],
+  "orchestration": [
+    {
+      "path": "verify/orchestration/engine.mjs",
+      "sha256": "cd1609e7aaa11628d74164beeb514aedff5dd6b2671779ad212a74e44f3b1ab5",
+      "role": "invoke",
+      "replaced_by": "verify package",
+      "sunset": "0.119.0"
+    }
+  ],
   "tooling": [
     {
       "path": "tools/collect.mjs",
@@ -20,6 +28,11 @@
     {
       "path": "tools/counterexamples.mjs",
       "sha256": "43e1e5ccc1a7ca1122f5540a308b569457b5c4944940a57fe32fd157b9c8d6f6",
+      "role": "test"
+    },
+    {
+      "path": "tools/engine-test.mjs",
+      "sha256": "8fa927d7c41131bd6d23b6a20ca5e3c93125497aa8765a91089ed954261e167e",
       "role": "test"
     }
   ],
@@ -48,6 +61,14 @@
       "at": "2026-11-01T09:56:42.502Z",
       "actor": "dsh-session:b9357cbc/gpt-6-astra",
       "reason": "Initial registration: reproducible synthetic counterexample copies only; never changes source snapshot."
+    },
+    {
+      "path": "tools/engine-test.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "8fa927d7c41131bd6d23b6a20ca5e3c93125497aa8765a91089ed954261e167e",
+      "at": "2026-11-01T10:27:51.467Z",
+      "actor": "dsh-session:b9357cbc/gpt-6-astra",
+      "reason": "Initial registration before commit: pin integrity and explicit-home launcher regressions."
     }
   ]
 }

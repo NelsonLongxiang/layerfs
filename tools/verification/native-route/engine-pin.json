@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "source_repo": "https://github.com/NelsonLongxiang/ygl-trees",
+  "source_commit": "e5876e07a76c37ffdc6bca67823e938ce904d951",
+  "fix_commit": "41344f4ddbc9979160c14b34e314194787117ce5",
+  "merge_pr": "https://github.com/NelsonLongxiang/ygl-trees/pull/145",
+  "reported_version": "0.118.0",
+  "qualification": "locally-built pinned candidate; not an npm release or signed seal",
+  "files": {
+    "package.json": "bb4fe4f7f494f6fd22a5f45036270c0f03c317c49694d894695432a45f250d8b",
+    "ygl.bundle.json": "0a92b9656379ce8452ce084c894357b93f716e776308fc55128b513d0905e8c7",
+    "dist/bundle/bin.cjs": "5cee6ac02028e0e2661f8e0e0bfddf041b01387039765e1d6450468e1dbde61b",
+    "dist/bundle/db-ClAA6y2W.cjs": "b25e324bb634f4fbb158acf3e3f8cbede6328ec7289893a09218b9d785b9edbd",
+    "dist/bundle/mcp-oJb1SQRL.cjs": "cfa53371c20e7a238a146a6ec4580006de61a1c458de44803af8d08fe8be3af2",
+    "dist/bundle/orm-BfScOP3Z.cjs": "5143115f8e061df62b18a46235981780bfdbfdfd76fda821f4c94f722a85bb4b",
+    "dist/bundle/rolldown-runtime-C96Ew50Q.cjs": "2024374bd85523f987d6b979eb22e731379ff7d485d7a62a0c5440824bec67b7",
+    "packages/verify/core/corpus/manifest.json": "c3b40d7b60a1ed0a617e7a75c6fd1c02fa4a8a6d2ffc3dbb778358cb1e759ffe"
+  },
+  "observed_external_dependencies": {
+    "better-sqlite3": "12.11.1",
+    "typeorm": "1.1.2",
+    "reflect-metadata": "0.2.2",
+    "pg": "8.23.1",
+    "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1"
+  },
+  "external_dependency_note": "Observed versions in the existing local dependency tree. Bundle hashes do not authenticate external native/runtime dependency bytes."
+}
