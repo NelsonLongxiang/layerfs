@@ -34,6 +34,13 @@ export function useWorker(endpoint) {
 
 /** The binding a client made now uses: the handed-over worker, else
  * LAYERFS_WORKER_ENDPOINT's, else the addon in this process. */
+/** Whether this process's binding can serve daemon-backed calls (Workspace and
+ *  Sandbox): the Linux in-process route, or a worker on a Linux host. The
+ *  Windows-native Store route serves project, fs and branch only. */
+export function servesDaemonCalls() {
+  return Boolean(handed?.endpoint ?? setting("WORKER_ENDPOINT")) || process.platform === "linux";
+}
+
 export function binding() {
   const endpoint = handed?.endpoint ?? setting("WORKER_ENDPOINT");
   if (!endpoint) return (local ??= inprocess());

@@ -2,7 +2,7 @@
 // addon in this process, or the worker client). The binding resolves
 // `{ value }` or `{ refused }` (plus `telemetry` when traced); a refusal
 // becomes a LayerFSError. Nothing is retried.
-import { binding } from "./transport/index.js";
+import { binding, servesDaemonCalls } from "./transport/index.js";
 
 /** The binding a client was made with (see transport/index.js). */
 export const transportOf = (client) => client[STATE].transport;
@@ -61,6 +61,20 @@ export function sandboxArg(sandbox) {
 /** Deployment settings from the client options, else the environment
  * (LAYERFS_<NAME>). A Workspace's Sandbox needs
  * every one but the container prefix and daemon host. */
+/** Refuses a daemon-backed call before any argument is examined, exactly as the
+ *  native table refuses it: on the Windows-native Store route (and anywhere else
+ *  without a daemon or worker) the family answers Unsupported rather than an
+ *  InvalidInput about deployment settings that route never uses. */
+export function requireDaemon(what) {
+  if (!servesDaemonCalls()) {
+    throw new LayerFSError(
+      "Unsupported",
+      `${what} needs a daemon; the Windows-native Store route serves project, fs and branch calls in-process`,
+      null,
+    );
+  }
+}
+
 export function deployment(options = {}) {
   const env = (name) => process.env[`LAYERFS_${name}`] || undefined;
   const deploy = {
@@ -73,7 +87,19 @@ export function deployment(options = {}) {
   };
   for (const [name, value] of Object.entries(deploy)) {
     if (name === "containerPrefix" || name === "daemonHost") continue;
-    if (!value) throw new LayerFSError("InvalidInput", `deploy.${name} is not configured (LAYERFS_${name.toUpperCase()})`, null);
+    if (!value) {
+      // A daemon-less route (the Windows-native Store route) can never serve this
+      // family, so an unconfigured deployment field there is Unsupported, not a
+      // InvalidInput aimed at the caller. A daemon route keeps the exact code.
+      if (!servesDaemonCalls()) {
+        throw new LayerFSError(
+          "Unsupported",
+          `${name} is not configured (LAYERFS_${name.toUpperCase()}), and this route has no daemon: the Windows-native Store route serves project, fs and branch calls in-process`,
+          null,
+        );
+      }
+      throw new LayerFSError("InvalidInput", `deploy.${name} is not configured (LAYERFS_${name.toUpperCase()})`, null);
+    }
   }
   if (!deploy.containerPrefix) delete deploy.containerPrefix;
   if (!deploy.daemonHost) delete deploy.daemonHost;
