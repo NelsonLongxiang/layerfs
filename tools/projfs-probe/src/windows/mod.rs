@@ -1,5 +1,6 @@
 //! Experimental FFI lives here only; no production unsafe allowance is widened.
 mod api;
+mod cache_client;
 mod callbacks;
 mod capture_run;
 mod instance;
@@ -8,6 +9,7 @@ mod namespace_run;
 mod overlay_ffi;
 mod store_run;
 pub use api::ProbeError;
+pub use cache_client::cache_child;
 pub use capture_run::{capture_child, capture_live};
 pub use instance::{check, live};
 pub use namespace_run::{namespace_child, namespace_live};

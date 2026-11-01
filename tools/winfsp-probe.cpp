@@ -48,12 +48,16 @@ struct Bridge {
   INT32(__cdecl *commit)(UINT32 *) = nullptr;
   INT32(__cdecl *committed)
   (UINT32, PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *published_byte)(PCWSTR, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *latest_byte)(PCWSTR, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *observe)() = nullptr;
   INT32(__cdecl *finish)() = nullptr;
 } bridge;
 static PSECURITY_DESCRIPTOR security = nullptr;
 static volatile LONG creates = 0, opens = 0, reads = 0, writes = 0, renames = 0,
                      cleanups = 0, closes = 0, deletes = 0, callback_error = 0;
+static volatile LONG ordinary_writes = 0, constrained_writes = 0;
+static bool cache_mode = false;
 static UINT32 length(PCWSTR text) {
   return text ? static_cast<UINT32>(wcslen(text)) : 0;
 }
@@ -162,7 +166,7 @@ static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32, BOOLEAN,
     fill(stat, info);
   return status;
 }
-static VOID cleanup(FSP_FILE_SYSTEM *, PVOID, PWSTR name, ULONG flags) {
+static VOID cleanup(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR name, ULONG flags) {
   InterlockedIncrement(&cleanups);
   if (flags & FspCleanupDelete) {
     auto status = bridge.unlink(name, length(name));
@@ -173,6 +177,11 @@ static VOID cleanup(FSP_FILE_SYSTEM *, PVOID, PWSTR name, ULONG flags) {
     } else
       InterlockedIncrement(&deletes);
   }
+  if (cache_mode) {
+    printf("CACHE_CLEANUP handle=%llu flags=%lu closes=%ld\n", handle(ctx),
+           flags, closes);
+    fflush(stdout);
+  }
   // Keep Rust OpenFile/KernelDirectory until Close, not Cleanup.
 }
 static VOID close_file(FSP_FILE_SYSTEM *, PVOID ctx) {
@@ -182,6 +191,10 @@ static VOID close_file(FSP_FILE_SYSTEM *, PVOID ctx) {
     fprintf(stderr, "OVERLAY_CLOSE_FAIL %08lx\n", static_cast<ULONG>(status));
   }
   InterlockedIncrement(&closes);
+  if (cache_mode) {
+    printf("CACHE_CLOSE handle=%llu cleanup=%ld\n", handle(ctx), cleanups);
+    fflush(stdout);
+  }
 }
 static NTSTATUS read_file(FSP_FILE_SYSTEM *, PVOID ctx, PVOID buffer,
                           UINT64 offset, ULONG size, PULONG count) {
@@ -235,6 +248,13 @@ static NTSTATUS write_file(FSP_FILE_SYSTEM *, PVOID ctx, PVOID buffer,
   }
   fill(stat, info);
   InterlockedIncrement(&writes);
+  InterlockedIncrement(constrained ? &constrained_writes : &ordinary_writes);
+  if (cache_mode) {
+    printf("CACHE_WRITE constrained=%u append=%u offset=%llu requested=%lu "
+           "done=%lu handle=%llu\n",
+           constrained, append, offset, size, *count, handle(ctx));
+    fflush(stdout);
+  }
   return STATUS_SUCCESS;
 }
 static NTSTATUS get_info(FSP_FILE_SYSTEM *, PVOID ctx,
@@ -412,12 +432,15 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, release_capture, lf_release_capture);
   LOAD(bridge, commit, lf_commit);
   LOAD(bridge, committed, lf_committed);
+  LOAD(bridge, published_byte, lf_published_byte);
+  LOAD(bridge, latest_byte, lf_latest_byte);
   LOAD(bridge, observe, lf_observe);
   LOAD(bridge, finish, lf_finish);
 #undef LOAD
   WCHAR store[32768];
   swprintf_s(store, L"%s\\store", argv[3]);
-  const bool rebound = argc == 6;
+  cache_mode = argc == 6 && wcscmp(argv[5], L"--cache-boundary") == 0;
+  const bool rebound = argc == 6 && !cache_mode;
   auto started =
       rebound ? bridge.reopen(argv[5], length(argv[5]), store, length(store))
               : bridge.start(store, length(store));
@@ -469,13 +492,65 @@ int wmain(int argc, wchar_t **argv) {
     status = api.start(fs, 2);
   bool done = false, captured = false, checked = false;
   bool committed1 = false, committed2 = false, unchanged = false;
+  unsigned cache_phase = 0;
   if (status >= 0 && mark(argv[3], L"ready")) {
     puts(rebound ? "NATIVE_REBOUND_READY existing_store=true init=false"
                  : "NATIVE_OVERLAY_READY");
     fflush(stdout);
     auto deadline = GetTickCount64() + 45000;
     while (GetTickCount64() < deadline) {
-      if (!rebound && !captured && exists(argv[3], L"capture")) {
+      if (cache_mode && cache_phase < 8) {
+        WCHAR request[32], ack[32];
+        swprintf_s(request, L"cache-%u", cache_phase);
+        swprintf_s(ack, L"cache-ack-%u", cache_phase);
+        if (exists(argv[3], request)) {
+          UINT32 published = 0, latest = 0, changed = 0;
+          if (bridge.published_byte(L"\\cache.bin", 10, &published) < 0)
+            break;
+          if (cache_phase == 0) {
+            if (published != 65 || bridge.capture() < 0)
+              break;
+          }
+          if (cache_phase <= 2) {
+            BYTE old[8192]{};
+            UINT32 count = 0;
+            if (bridge.captured(L"\\cache.bin", 10, old, sizeof(old), &count) <
+                    0 ||
+                count != 4096 || old[0] != 65)
+              break;
+            bool exact = true;
+            for (UINT32 i = 0; i < count; ++i)
+              if (old[i] != 65)
+                exact = false;
+            if (!exact)
+              break;
+            printf("CACHE_CAPTURE phase=%u captured=65 stable=true\n",
+                   cache_phase);
+          }
+          if (cache_phase == 2 && bridge.release_capture() < 0)
+            break;
+          if (cache_phase >= 2) {
+            if (bridge.commit(&changed) < 0 ||
+                bridge.latest_byte(L"\\cache.bin", 10, &latest) < 0)
+              break;
+          }
+          UINT32 after = 0;
+          if (bridge.published_byte(L"\\cache.bin", 10, &after) < 0 ||
+              bridge.observe() < 0)
+            break;
+          const UINT32 visible[8] = {65, 66, 66, 67, 67, 68, 68, 68};
+          printf("CACHE_PHASE phase=%u application=%u published_before=%u "
+                 "published_after=%u committed=%u commit_changed=%u writes=%ld "
+                 "constrained=%ld cleanup=%ld close=%ld\n",
+                 cache_phase, visible[cache_phase], published, after, latest,
+                 changed, writes, constrained_writes, cleanups, closes);
+          fflush(stdout);
+          if (!mark(argv[3], ack))
+            break;
+          ++cache_phase;
+        }
+      }
+      if (!cache_mode && !rebound && !captured && exists(argv[3], L"capture")) {
         if (bridge.capture() < 0)
           break;
         captured = true;
@@ -570,10 +645,12 @@ int wmain(int argc, wchar_t **argv) {
   } // failure keeps original Rust owner state until process ends
   puts("NOT_RUN product_Workspace concurrent_commit mapped_lifecycle "
        "full_repository");
-  return done && closed == 0 && !callback_error && unchanged &&
-                 (rebound ? (opens && reads)
-                          : (captured && checked && committed1 && committed2 &&
-                             creates && reads && writes && renames && deletes))
+  return done && closed == 0 && !callback_error && (cache_mode || unchanged) &&
+                 (cache_mode ? (cache_phase == 8 && creates && writes)
+                             : (rebound ? (opens && reads)
+                                        : (captured && checked && committed1 &&
+                                           committed2 && creates && reads &&
+                                           writes && renames && deletes)))
              ? 0
              : 1;
 }

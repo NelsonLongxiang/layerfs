@@ -208,6 +208,27 @@ impl Session {
             (_, Err(e)) => Err(e),
         }
     }
+    /// Reads the locally published view directly, never the Windows file cache.
+    pub fn published_byte(&self, path: &str) -> Result<u8> {
+        validate(path)?;
+        self.with(|m| {
+            let stat = m.resolve(path).map_err(|e| coded(&e.code, e.message))?;
+            let mut bytes = Vec::new();
+            m.view
+                .read(m.op.overlay(), stat.serial, 0, 1, &mut bytes)
+                .map_err(workspace_error)?;
+            bytes
+                .first()
+                .copied()
+                .ok_or_else(|| refused(0xc0000011, "published file empty"))
+        })
+    }
+    pub fn latest_commit_index(&self) -> Result<usize> {
+        self.commits
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| refused(0xc000000d, "no Commit"))
+    }
     pub fn stat_path(&self, path: &str) -> Result<Stat> {
         validate(path)?;
         self.with(|m| {

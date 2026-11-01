@@ -126,3 +126,66 @@ pub fn verify(path: &Path) -> Result<(), String> {
     println!("REOPEN_IDS first={:?} second={:?}", older.id, newer.id);
     Ok(())
 }
+
+/// Independent read-only check for the eight-phase mapping fixture, not a flush.
+pub fn verify_cache(path: &Path) -> Result<(), String> {
+    let handles = Handles::open_read_only(
+        PersistenceConfig::sqlite(path).with_sqlite_profile(SqlitePersistenceProfile::Disposable),
+        BINDING,
+        CURSOR,
+    )
+    .map_err(|e| e.to_string())?;
+    let page = handles
+        .history
+        .commit_history(&CommitHistoryRequest {
+            branch: branch(),
+            start: None,
+            cursor: None,
+            limit: 10,
+        })
+        .map_err(|e| e.to_string())?;
+    if page.records.is_empty() || page.continuation.is_some() || page.records.len() > 6 {
+        return Err("cache fixture History count outside attempted Commit phases".into());
+    }
+    let head = handles
+        .history
+        .branch_snapshot(branch())
+        .map_err(|e| e.to_string())?
+        .ok_or("Branch absent")?;
+    if head.branch.head_commit != Some(page.records[0].id)
+        || head.effective_root != page.records[0].root
+    {
+        return Err("cache fixture head differs".into());
+    }
+    drop(handles);
+    let mut previous = None;
+    let mut last = 0;
+    for record in page.records.iter().rev() {
+        if record.parent != previous || record.meta.via != CommitVia::Workspace {
+            return Err("cache history ancestry/provenance differs".into());
+        }
+        let mut saved = Saved::open_commit(path, BINDING, CURSOR, record.id)?;
+        if saved.entry("cache.bin")?.ok_or("cache file absent")?.size != 4096 {
+            return Err("cache length differs".into());
+        }
+        let bytes = saved.read("cache.bin", 0, 4096)?;
+        if !(65..=68).contains(&bytes[0]) || bytes[0] < last || bytes[1..].iter().any(|&b| b != 65)
+        {
+            return Err("cache snapshot bytes differ from staged single-byte protocol".into());
+        }
+        println!(
+            "CACHE_HISTORY id={:?} byte={} parent={:?} via=Workspace",
+            record.id, bytes[0], record.parent
+        );
+        previous = Some(record.id);
+        last = bytes[0];
+    }
+    if last != 68 {
+        return Err("latest Commit has not captured final application byte".into());
+    }
+    println!(
+        "REOPEN_CACHE_PASS commits={} final_byte=68 tail_exact=true head_exact=true readonly=true",
+        page.records.len()
+    );
+    Ok(())
+}

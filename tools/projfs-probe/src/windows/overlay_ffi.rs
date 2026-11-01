@@ -328,6 +328,20 @@ pub unsafe extern "C" fn lf_committed(
     })
 }
 #[no_mangle]
+pub unsafe extern "C" fn lf_published_byte(ptr: *const u16, len: u32, out: *mut u32) -> i32 {
+    call(|s| unsafe { put(out, u32::from(s.published_byte(&path(ptr, len)?)?)) })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_latest_byte(ptr: *const u16, len: u32, out: *mut u32) -> i32 {
+    call(|s| {
+        let bytes = s.committed_bytes(s.latest_commit_index()?, &unsafe { path(ptr, len) }?)?;
+        let byte = *bytes
+            .first()
+            .ok_or_else(|| failed("empty latest snapshot"))?;
+        unsafe { put(out, u32::from(byte)) }
+    })
+}
+#[no_mangle]
 pub extern "C" fn lf_observe() -> i32 {
     call(|s| s.observe())
 }

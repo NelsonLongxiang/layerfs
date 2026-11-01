@@ -216,3 +216,45 @@ content encoding is used. A failed Commit retains its exact original failure;
 a failed post-publication audit retains the known success receipt too. The host
 never retries an uncertain publication. Product Workspace API, concurrent Commit,
 mapped writes and full-repository qualification remain NOT_RUN.
+
+## WinFsp cache / writable-view boundary
+
+The native host's optional --cache-boundary mode observes eight ordinary-process
+checkpoints. The client performs one ordinary write and two writable-view stores,
+closes File and section HANDLE separately from the view, then unmaps and reopens.
+It never calls FlushViewOfFile, FlushFileBuffers, sync_all or a Store API.
+
+Run under an explicit <=120-second wall ceiling from the repository root:
+
+```powershell
+node tools/winfsp-cache-test.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <target>/debug/layerfs-projfs-probe.exe <fresh-output>
+node tools/winfsp-cache-test.mjs --self-test <fresh-output>/result.json
+```
+
+The host reads published bytes through SourceView::read, not through Windows
+file APIs, and reads saved bytes through an independently opened immutable
+Commit. Its phase labels for application values are cross-checked against the
+ordinary client's actual read/view values. Observations retain all three values
+separately. The parser checks exact phases, captured content, known written byte
+ordering, actual same-handle Cleanup/Close ordering and Commit/frontier agreement;
+seven falsifying variants must reject. A separate read-only process verifies the
+History chain, all 4096-byte snapshots, exact unchanged tails and final byte.
+
+Current actual evidence shows a writable mapping can expose 67/68 to the application
+while published Overlay and Commit still contain 66. File/section closure and
+Unmap alone do not establish publication; after a later ordinary open/read/close,
+a constrained Write arrived after Cleanup but before Close and published 68.
+This describes the retained trace, not a deterministic flush trigger or a timing
+promise. No extra sleep, retry or explicit flush was added to obtain it.
+
+A PASS here means the bounded observation/consistency checks passed. It is **not**
+mapped-write qualification. UpToDate is relative to the published frontier,
+not proof of no dirty kernel pages. The existing StoreOpen clipping and retained
+OpenFile custody are tested separately: cached writes cannot extend EOF, writes
+beyond EOF are no-ops, and stale handles refuse. ConstrainedIo means no extension;
+it is not, by itself, proof that a request originated from a mapping.
+
+Keep this limitation in any product-readiness claim. Do not silently add a blocking
+flush while holding the bridge mutex, infer dirty-view absence from descriptor
+counts, or declare an arbitrary delay a drain. Mapping admission/coherence and
+concurrent capture/reply semantics remain separate engineering work.

@@ -187,3 +187,44 @@ fn nested_directory_moves_and_same_store_rebind_use_existing_ports() {
     rebound.finish().unwrap();
     println!("NESTED_REBIND_UNIT_PASS root={}", root.display());
 }
+
+#[cfg(windows)]
+#[test]
+fn published_observer_and_constrained_stores_preserve_capture_and_eof() {
+    use layerfs_native_probe::native_overlay::Session;
+    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tmp")
+        .canonicalize()
+        .unwrap();
+    let root = parent.join(format!(
+        "native-cache-unit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut s = Session::create(&root).unwrap();
+    let (h, _) = s.create_file("/cache.bin").unwrap();
+    assert!(s.published_byte("/cache.bin").is_err());
+    s.write(h, 0, &[65; 4096], false, false).unwrap();
+    assert_eq!(s.published_byte("/cache.bin").unwrap(), 65);
+    s.capture().unwrap();
+    s.write(h, 0, &[66], false, true).unwrap();
+    assert_eq!(s.published_byte("/cache.bin").unwrap(), 66);
+    assert_eq!(s.captured_bytes("/cache.bin").unwrap(), [65; 4096]);
+    s.release_capture().unwrap();
+    assert!(s.commit().unwrap());
+    assert_eq!(s.committed_bytes(0, "/cache.bin").unwrap()[0], 66);
+    s.resize(h, 2).unwrap();
+    s.write(h, 1, b"XYZ", false, true).unwrap();
+    assert_eq!(s.read(h, 0, 100).unwrap(), b"BX");
+    s.write(h, 4096, b"ignored", false, true).unwrap();
+    assert_eq!(s.stat_handle(h).unwrap().size, 2);
+    assert_eq!(s.read(h, 0, 100).unwrap(), b"BX");
+    assert_eq!(s.committed_bytes(0, "/cache.bin").unwrap().len(), 4096);
+    s.close_file(h).unwrap();
+    assert!(s.write(h, 0, b"stale", false, true).is_err());
+    s.finish().unwrap();
+    println!("CACHE_STORE_UNIT_PASS root={}", root.display());
+}

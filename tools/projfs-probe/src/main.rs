@@ -74,6 +74,15 @@ fn main() {
             }
             return;
         }
+        if args.len() == 2 && args[0] == "verify-cache" {
+            if let Err(error) =
+                layerfs_native_probe::commit_reopen::verify_cache(Path::new(&args[1]))
+            {
+                eprintln!("REOPEN_CACHE_FAIL {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
         if args.len() == 2 && args[0] == "verify-commits" {
             if let Err(error) = layerfs_native_probe::commit_reopen::verify(Path::new(&args[1])) {
                 eprintln!("REOPEN_COMMIT_FAIL {error}");
@@ -85,7 +94,9 @@ fn main() {
             capture_child, capture_live, check, live, live_store, namespace_child, namespace_live,
             ProbeError,
         };
-        let result = if args.len() == 1 && args[0] == "check" {
+        let result = if args.len() == 2 && args[0] == "cache-child" {
+            layerfs_native_probe::windows::cache_child(Path::new(&args[1]))
+        } else if args.len() == 1 && args[0] == "check" {
             check()
         } else if args.len() == 2 && args[0] == "live" {
             live(Path::new(&args[1]))
