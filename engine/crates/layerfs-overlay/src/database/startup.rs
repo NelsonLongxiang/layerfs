@@ -143,7 +143,7 @@ fn initialize(path: &Path, config: ProfileConfig, template: Option<&Path>) -> Cr
             super::profile::readback(&connection, &sql, "PRAGMA user_version", |row| row.get(0))?;
         let application: i64 =
             super::profile::readback(&connection, &sql, "PRAGMA application_id", |row| row.get(0))?;
-        if profile.schema_version != 39 || application != 1279676210 {
+        if profile.schema_version != 40 || application != 1279676210 {
             return Err(crate::OverlayError::Invalid("overlay schema readback"));
         }
         if template.is_some() {

@@ -27,6 +27,7 @@ fn node(serial: u64, kind: InodeKind, size: u64) -> Inode {
         born: 0,
         entries: u64::from(kind == InodeKind::Directory),
         subdirs: 0,
+        windows_attributes: 0,
     }
 }
 fn cell(bytes: &[u8]) -> Cell {

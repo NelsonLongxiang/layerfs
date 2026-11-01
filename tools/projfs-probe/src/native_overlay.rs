@@ -7,6 +7,8 @@ mod commit;
 pub use commit::{CommitCompletion, CommitWork};
 #[path = "native_close.rs"]
 mod close;
+#[path = "native_metadata.rs"]
+mod metadata;
 pub use close::CloseState;
 use layerfs_overlay::{Capture, CapturedReader, Inode, KernelDirectory, KernelMount, OpenFile};
 use layerfs_store_service::{
@@ -109,7 +111,7 @@ pub struct Stat {
     pub nanos: u32,
     pub mode: u32,
     pub directory: u32,
-    pub reserved: u32,
+    pub attributes: u32,
 }
 impl From<ViewStat> for Stat {
     fn from(s: ViewStat) -> Self {
@@ -122,7 +124,7 @@ impl From<ViewStat> for Stat {
             directory: u32::from(
                 s.kind == layerfs_content::object::inode_leaf::InodeKind::Directory,
             ),
-            reserved: 0,
+            attributes: s.windows_attributes,
         }
     }
 }
@@ -131,6 +133,8 @@ struct Handle {
     file: Option<OpenFile>,
     directory: Option<KernelDirectory>,
     lookup: bool,
+    data_writable: bool,
+    attributes_writable: bool,
 }
 pub struct Session {
     service: Option<StoreService>,
@@ -378,6 +382,14 @@ impl Session {
         }
     }
     pub fn open(&mut self, path: &str, writable: bool) -> Result<(u64, Stat)> {
+        self.open_access(path, writable, writable)
+    }
+    pub fn open_access(
+        &mut self,
+        path: &str,
+        data_writable: bool,
+        attributes_writable: bool,
+    ) -> Result<(u64, Stat)> {
         validate(path)?;
         let stat = self.stat_path(path)?;
         let lookup = path != "/";
@@ -405,7 +417,7 @@ impl Session {
                     self.mount,
                     request,
                     stat.serial,
-                    writable,
+                    data_writable || attributes_writable,
                     Arc::new(facts.clone()),
                 )
             }
@@ -422,6 +434,8 @@ impl Session {
                         file: observed.open_candidate,
                         directory: observed.directory_candidate,
                         lookup,
+                        data_writable,
+                        attributes_writable,
                     })
                 }
                 Some(KernelReadDecision::Needs(needs)) => facts
@@ -458,29 +472,35 @@ impl Session {
         self.create_entry(path, true)
     }
     fn create_entry(&mut self, path: &str, directory: bool) -> Result<(u64, Stat)> {
+        self.create_windows(path, directory, 0, !directory, true)
+    }
+    pub fn create_windows(
+        &mut self,
+        path: &str,
+        directory: bool,
+        attributes: u32,
+        data_writable: bool,
+        attributes_writable: bool,
+    ) -> Result<(u64, Stat)> {
         validate(path)?;
+        if attributes & !0xb7 != 0 || attributes & 0x10 != 0 && !directory {
+            return Err(refused(0xc00000bb, "unrepresented creation attributes"));
+        }
         if path == "/" {
             return Err(refused(0xc0000035, "root exists"));
         }
         self.with(|m| {
             let (parent, name) = m.parent(path).map_err(|e| coded(&e.code, e.message))?;
-            let operation = if directory {
-                Operation::Mkdir {
-                    parent,
-                    name,
-                    mode: 0o700,
-                }
-            } else {
-                Operation::Create {
-                    parent,
-                    name,
-                    mode: 0o600,
-                }
+            let operation = Operation::CreateWindows {
+                parent,
+                name,
+                directory,
+                attributes: attributes & 0x27,
             };
             mutation_error(m.apply(operation).map(|_| ()))
         })?;
         self.publications += 1;
-        self.open(path, !directory)
+        self.open_access(path, data_writable, attributes_writable)
     }
     pub fn read(&self, handle: u64, offset: u64, length: u32) -> Result<Vec<u8>> {
         self.accepting()?;
@@ -533,7 +553,7 @@ impl Session {
             .get(&handle)
             .and_then(|h| h.file)
             .ok_or_else(|| refused(0xc0000008, "stale file handle"))?;
-        if !cached && !file.writable() {
+        if !cached && !self.handles.get(&handle).is_some_and(|h| h.data_writable) {
             return Err(refused(0xc0000022, "descriptor is read-only"));
         }
         let operation = if cached {
@@ -563,7 +583,7 @@ impl Session {
             .get(&handle)
             .and_then(|h| h.file)
             .ok_or_else(|| refused(0xc0000008, "stale file handle"))?;
-        if !file.writable() {
+        if !self.handles.get(&handle).is_some_and(|h| h.data_writable) {
             return Err(refused(0xc0000022, "descriptor is read-only"));
         }
         self.with(|m| {
@@ -685,6 +705,47 @@ impl Session {
         }
         self.handles.remove(&handle);
         Ok(())
+    }
+    pub fn directory_dot(&self, handle: u64, parent: bool) -> Result<Option<Stat>> {
+        let held = self
+            .handles
+            .get(&handle)
+            .ok_or_else(|| refused(0xc0000008, "stale directory handle"))?;
+        let directory = held
+            .directory
+            .ok_or_else(|| refused(0xc0000103, "not a directory handle"))?;
+        if held.serial == self.root {
+            return Ok(None);
+        }
+        let serial = if parent {
+            let op = self.bound.operation().map_err(workspace_error)?;
+            let visit = op
+                .workspace()
+                .kernel_directory_visit(
+                    op.resident(),
+                    self.mount,
+                    held.serial,
+                    directory.owner_id(),
+                    0,
+                    None,
+                )
+                .map_err(workspace_error)?;
+            op.overlay()
+                .kernel_directory_visit(self.bound.route(), visit)
+                .map_err(failed)?
+                .page
+                .parent()
+                .ok_or_else(|| failed("directory parent absent"))?
+        } else {
+            held.serial
+        };
+        self.with(|m| {
+            m.view
+                .stat(m.op.overlay(), serial)
+                .map(Stat::from)
+                .map_err(workspace_error)
+        })
+        .map(Some)
     }
     pub fn list_next(&self, handle: u64, after: Option<&[u8]>) -> Result<Option<(Vec<u8>, Stat)>> {
         let held = self

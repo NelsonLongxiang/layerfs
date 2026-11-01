@@ -1,15 +1,22 @@
-//! chmod, utimens and truncate over the portable metadata grammar.
+//! Atomic portable mode/mtime/size and represented Windows basic attributes.
 use crate::eval::{refuse, Eval};
 use crate::{Refusal, Time, WorkspaceResult};
 use layerfs_overlay::{Changes, Inode, InodeKind};
+
+#[derive(Default)]
+pub(crate) struct Fields {
+    pub mode: Option<u32>,
+    pub mtime: Option<Time>,
+    pub size: Option<u64>,
+    pub windows: Option<u32>,
+    pub merge_windows: bool,
+}
 
 /// Outer None: undecided this round. The flag is false when nothing changes.
 pub(crate) fn set(
     eval: &mut Eval<'_>,
     serial: u64,
-    mode: Option<u32>,
-    mtime: Option<Time>,
-    size: Option<u64>,
+    fields: Fields,
     now: Time,
 ) -> WorkspaceResult<Option<(Option<Changes>, Inode)>> {
     // A removed inode with a retained row still accepts descriptor-based
@@ -22,6 +29,13 @@ pub(crate) fn set(
     if !eval.alive(&old) && eval.open_serial != Some(serial) {
         return refuse(Refusal::Missing);
     }
+    let Fields {
+        mode,
+        mtime,
+        size,
+        windows,
+        merge_windows,
+    } = fields;
     let mut new = old.clone();
     if let Some(mode) = mode {
         let allowed = match old.kind {
@@ -33,6 +47,22 @@ pub(crate) fn set(
             return refuse(Refusal::NotPermitted);
         }
         new.mode = mode as u16;
+    }
+    if let Some(attributes) = windows {
+        if attributes & !0x27 != 0 || old.kind == InodeKind::Symlink {
+            return refuse(Refusal::Unsupported);
+        }
+        let attributes = if merge_windows {
+            attributes | old.windows_attributes | u32::from(old.mode & 0o200 == 0)
+        } else {
+            attributes
+        };
+        new.windows_attributes = attributes & crate::windows_metadata::MASK;
+        new.mode = if attributes & 1 != 0 {
+            new.mode & !0o222
+        } else {
+            new.mode | 0o200
+        };
     }
     if let Some(size) = size {
         match old.kind {

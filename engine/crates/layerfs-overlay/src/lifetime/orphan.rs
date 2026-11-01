@@ -36,7 +36,7 @@ impl Overlay {
         if !self.orphan_seen.get() || self.orphan(serial)?.is_none() {
             return Ok(None);
         }
-        self.query(StatementKind::Inode,"SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs
+        self.query(StatementKind::Inode,"SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs,windows_attributes
             FROM fs_inode WHERE inode=?1 AND generation=-1",&[&serial],16,inode::decode).map(|mut rows|rows.pop())
     }
     /// After a transaction deleted orphan rows: the engine's exact count of
@@ -111,6 +111,7 @@ impl Overlay {
                 &0_i64,
                 &0_i64,
                 &(state.revision + 1),
+                &i64::from(inode.windows_attributes),
             ],
             128,
         )?;

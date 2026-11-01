@@ -99,7 +99,7 @@ impl Overlay {
             return Ok((0, 0, false));
         }
         let lower=self.query(StatementKind::Inode,
-            "SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs
+            "SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs,windows_attributes
              FROM fs_inode INDEXED BY fs_inode_capture WHERE generation=?1 AND inode>=?2 ORDER BY inode LIMIT 1",
             &[&item.target,&item.cursor],24,inode::decode)?.pop();
         let Some(lower) = lower else {

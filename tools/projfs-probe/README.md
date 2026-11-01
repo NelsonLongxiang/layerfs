@@ -429,3 +429,35 @@ semantics, force-overwrite policy or retry an operation. Conflict/unknown custod
 still retains the original result. Simultaneous Commit construction, conflicting
 edits, cross-process duplicate identities, kernel cache coherence for all merges,
 crash recovery, mappings and product SDK integration remain outside this proof.
+
+## Native basic metadata and ordinary Git
+
+SetBasicInfo now maps represented fields to public Workspace operations rather
+than succeeding with a process-local flag table. CreateWindows initializes flags
+atomically; OverwriteWindows truncates and replaces/merges them in one publication.
+Hidden/System/Archive survive capture and Commit in Content's opaque attribute tree,
+with generation-owned storage in Overlay schema40; ReadOnly maps to portable mode.
+Attribute-only handles do not acquire data-write permission at the native bridge.
+The four reported Windows times remain projections of one portable mtime: a request
+for distinct creation/access/change times is refused before any effect. This is not
+full NTFS metadata support. Project Init's original metadata-import scope is unchanged.
+
+Non-root directory enumeration returns dot entries from the exact directory owner
+and its retained current parent, including empty and moved directories. It does not
+persist dot names into the namespace or infer parents by scanning paths.
+
+The bounded ordinary Git harness uses a new synthetic Store and test repository,
+explicit stdin binding, isolated per-process Git config/template/identity, and real
+Windows Git file calls. It never alters global Git configuration or existing repos:
+
+```powershell
+node tools/winfsp-git-test.mjs <native-host> <installed-WinFsp-dll> <Rust-dll> <checker-exe> <git-exe> <fresh-output>
+```
+
+Git init/add/two commits/status/fsck and LayerFS Commit plus exact file-hash remount
+checks have run, including .git/index, objects, refs and ignored content. The complete
+harness is still FAIL if its second mount cannot close: in the retained final run,
+eight files had Cleanup but not Close after Git exited. It keeps the data checkpoint
+separate from normal-close qualification and does not relax the close guard, force
+flush/unmap, extend waits or reinterpret test-process cancellation as normal unmount.
+See the [metadata/Git result](../../core/docs/issues/352/WINFSP-GIT-METADATA-2026-11-02.md).

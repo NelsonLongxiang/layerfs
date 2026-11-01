@@ -3,10 +3,10 @@
 /// its payload-layer columns: a job that publishes the serial reads no layer
 /// row again.
 pub(crate) const INODE_LOOKUP: &str =
-    "SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs,generation,epoch,height,referenced,sequence
+    "SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs,windows_attributes,generation,epoch,height,referenced,sequence
     FROM fs_inode WHERE inode=?1 AND generation<=?2 AND generation>?3 ORDER BY generation DESC LIMIT 1";
 pub(crate) const INODE_CAPTURE: &str =
-    "SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs
+    "SELECT inode,kind,mode,mtime_seconds,mtime_nanoseconds,nlink,size,inherited_cutoff,born,entries,subdirs,windows_attributes
     FROM fs_inode INDEXED BY fs_inode_capture WHERE generation=?1 AND inode>?2 ORDER BY inode LIMIT 64";
 /// The last row at or before cell ?4 in its slot, which starts at ?3. A row
 /// of one cell at ?4 returns its bytes and mask; any other row only its
@@ -133,12 +133,12 @@ pub(crate) const CAPTURED_DIRECTORY_ENTRY: &str =
 /// The first row of a serial in a generation. A row that already exists is a
 /// constraint failure, never an update. A new layer holds no reference piece.
 pub(crate) const INODE_INSERT: &str = "INSERT INTO fs_inode
-    VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,?15)";
+    VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?16,?13,?14,0,?15)";
 /// Every value of a row that exists, with the parameters of the insert. The
 /// reference flag is not a value of the job: only a published piece sets it.
 pub(crate) const INODE_UPDATE: &str = "UPDATE fs_inode SET kind=?3,mode=?4,
     mtime_seconds=?5,mtime_nanoseconds=?6,nlink=?7,size=?8,inherited_cutoff=?9,
-    born=?10,entries=?11,subdirs=?12,epoch=?13,height=?14,sequence=?15
+    born=?10,entries=?11,subdirs=?12,windows_attributes=?16,epoch=?13,height=?14,sequence=?15
     WHERE inode=?1 AND generation=?2";
 pub(crate) const DIRECTORY_ENTRY_ACTIVE: &str =
     "SELECT inode,inherited FROM fs_entry WHERE parent=?1 AND name=?2 AND generation=?3";

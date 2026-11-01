@@ -598,6 +598,7 @@ fn plain(serial: u64, size: u64, nlink: u64) -> Inode {
         born: 0,
         entries: 0,
         subdirs: 0,
+        windows_attributes: 0,
     }
 }
 /// One compound job of one inode row and at most one write, its reply attempted.

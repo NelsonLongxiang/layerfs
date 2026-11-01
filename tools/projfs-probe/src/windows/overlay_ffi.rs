@@ -165,7 +165,7 @@ pub unsafe extern "C" fn lf_open(
         }
         let name = unsafe { path(ptr, len) }?;
         let (h, stat) = match create {
-            0 => s.open(&name, writable != 0)?,
+            0 => s.open_access(&name, writable & 1 != 0, writable & 2 != 0)?,
             1 => s.create_file(&name)?,
             2 => s.create_directory(&name)?,
             _ => {
@@ -175,6 +175,33 @@ pub unsafe extern "C" fn lf_open(
                 ))
             }
         };
+        unsafe {
+            put(handle, h)?;
+            put(out, stat)
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_create(
+    ptr: *const u16,
+    len: u32,
+    directory: u32,
+    access: u32,
+    attributes: u32,
+    handle: *mut u64,
+    out: *mut Stat,
+) -> i32 {
+    call(|s| {
+        if handle.is_null() || out.is_null() {
+            return Err(failed("null create output"));
+        }
+        let (h, stat) = s.create_windows(
+            &unsafe { path(ptr, len) }?,
+            directory != 0,
+            attributes,
+            access & 1 != 0,
+            access & 2 != 0,
+        )?;
         unsafe {
             put(handle, h)?;
             put(out, stat)
@@ -228,6 +255,39 @@ pub unsafe extern "C" fn lf_write(
     })
 }
 #[no_mangle]
+pub unsafe extern "C" fn lf_basic_info(
+    handle: u64,
+    attributes: u32,
+    creation: u64,
+    access: u64,
+    write: u64,
+    change: u64,
+    out: *mut Stat,
+) -> i32 {
+    call(|s| {
+        if out.is_null() {
+            return Err(failed("null basic info output"));
+        }
+        let stat = s.basic_info(handle, attributes, [creation, access, write, change])?;
+        unsafe { put(out, stat) }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_overwrite(
+    handle: u64,
+    attributes: u32,
+    replace: u32,
+    out: *mut Stat,
+) -> i32 {
+    call(|s| {
+        if out.is_null() {
+            return Err(failed("null overwrite output"));
+        }
+        let stat = s.overwrite_windows(handle, attributes, replace != 0)?;
+        unsafe { put(out, stat) }
+    })
+}
+#[no_mangle]
 pub unsafe extern "C" fn lf_resize(handle: u64, size: u64, out: *mut Stat) -> i32 {
     call(|s| unsafe { put(out, s.resize(handle, size)?) })
 }
@@ -245,6 +305,21 @@ pub unsafe extern "C" fn lf_rename(
             &unsafe { path(to, tlen) }?,
             replace != 0,
         )
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_dot(handle: u64, parent: u32, found: *mut u32, out: *mut Stat) -> i32 {
+    call(|s| {
+        if found.is_null() || out.is_null() {
+            return Err(failed("null dot output"));
+        }
+        let value = s.directory_dot(handle, parent != 0)?;
+        if let Some(stat) = value {
+            unsafe {
+                put(out, stat)?;
+            }
+        }
+        unsafe { put(found, u32::from(value.is_some())) }
     })
 }
 #[no_mangle]

@@ -23,7 +23,7 @@ struct Api {
 struct Stat {
   UINT64 serial, size;
   INT64 mtime;
-  UINT32 nanos, mode, directory, reserved;
+  UINT32 nanos, mode, directory, attributes;
 };
 static_assert(sizeof(Stat) == 40, "Rust ABI Stat size");
 struct CloseState {
@@ -40,12 +40,18 @@ struct Bridge {
   INT32(__cdecl *open)
   (PCWSTR, UINT32, UINT32, UINT32, UINT64 *, Stat *) = nullptr;
   INT32(__cdecl *info)(UINT64, Stat *) = nullptr;
+  INT32(__cdecl *create)
+  (PCWSTR, UINT32, UINT32, UINT32, UINT32, UINT64 *, Stat *) = nullptr;
   INT32(__cdecl *read)(UINT64, UINT64, PVOID, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *write)
   (UINT64, UINT64, PVOID, UINT32, UINT32, Stat *) = nullptr;
   INT32(__cdecl *resize)(UINT64, UINT64, Stat *) = nullptr;
+  INT32(__cdecl *overwrite)(UINT64, UINT32, UINT32, Stat *) = nullptr;
+  INT32(__cdecl *basic_info)
+  (UINT64, UINT32, UINT64, UINT64, UINT64, UINT64, Stat *) = nullptr;
   INT32(__cdecl *rename)(PCWSTR, UINT32, PCWSTR, UINT32, UINT32) = nullptr;
   INT32(__cdecl *can_delete)(PCWSTR, UINT32) = nullptr;
+  INT32(__cdecl *dot)(UINT64, UINT32, UINT32 *, Stat *) = nullptr;
   INT32(__cdecl *unlink)(PCWSTR, UINT32) = nullptr;
   INT32(__cdecl *close)(UINT64) = nullptr;
   INT32(__cdecl *next)
@@ -78,15 +84,20 @@ static UINT64 handle(PVOID ctx) {
 static void fill(const Stat &stat, FSP_FSCTL_FILE_INFO *info) {
   *info = {};
   info->FileAttributes =
-      stat.directory ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
-  if (!stat.directory && !(stat.mode & 0200))
+      stat.attributes | (stat.directory ? FILE_ATTRIBUTE_DIRECTORY : 0);
+  if (!(stat.mode & 0200))
     info->FileAttributes |= FILE_ATTRIBUTE_READONLY;
+  if (!info->FileAttributes)
+    info->FileAttributes = FILE_ATTRIBUTE_NORMAL;
   info->IndexNumber = stat.serial;
   info->FileSize = stat.size;
   info->AllocationSize = (stat.size + 4095) & ~UINT64(4095);
   if (stat.mtime >= -11644473600LL) {
-    auto time = (static_cast<UINT64>(stat.mtime + 11644473600LL) * 10000000) +
-                (stat.nanos / 100);
+    auto seconds = static_cast<UINT64>(stat.mtime) + UINT64(11644473600);
+    auto fraction = stat.nanos / 100;
+    if (seconds > (UINT64_MAX - fraction) / 10000000)
+      return; // Portable time outside FILETIME: no wrapping or signed overflow.
+    auto time = seconds * 10000000 + fraction;
     info->CreationTime = time;
     info->LastAccessTime = time;
     info->LastWriteTime = time;
@@ -135,9 +146,11 @@ static NTSTATUS open_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32, UINT32 access,
                           PVOID *ctx, FSP_FSCTL_FILE_INFO *info) {
   Stat stat{};
   UINT64 held = 0;
-  auto status = bridge.open(
-      name, length(name), 0,
-      (access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0, &held, &stat);
+  auto status =
+      bridge.open(name, length(name), 0,
+                  ((access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) ? 1u : 0u) |
+                      ((access & FILE_WRITE_ATTRIBUTES) ? 2u : 0u),
+                  &held, &stat);
   if (status < 0)
     return status;
   auto full = reinterpret_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx);
@@ -148,16 +161,18 @@ static NTSTATUS open_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32, UINT32 access,
   return STATUS_SUCCESS;
 }
 static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
-                            UINT32, UINT32, PSECURITY_DESCRIPTOR,
-                            UINT64 allocation, PVOID *ctx,
+                            UINT32 access, UINT32 attributes,
+                            PSECURITY_DESCRIPTOR, UINT64 allocation, PVOID *ctx,
                             FSP_FSCTL_FILE_INFO *info) {
   if (allocation)
     return STATUS_NOT_SUPPORTED;
   Stat stat{};
   UINT64 held = 0;
-  auto status =
-      bridge.open(name, length(name), (options & FILE_DIRECTORY_FILE) ? 2u : 1u,
-                  1, &held, &stat);
+  auto status = bridge.create(
+      name, length(name), (options & FILE_DIRECTORY_FILE) ? 1u : 0u,
+      ((access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) ? 1u : 0u) |
+          ((access & FILE_WRITE_ATTRIBUTES) ? 2u : 0u),
+      attributes, &held, &stat);
   if (status < 0)
     return status;
   auto full = reinterpret_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx);
@@ -167,12 +182,14 @@ static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
   InterlockedIncrement(&creates);
   return STATUS_SUCCESS;
 }
-static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32, BOOLEAN,
-                          UINT64 allocation, FSP_FSCTL_FILE_INFO *info) {
+static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32 attributes,
+                          BOOLEAN replace, UINT64 allocation,
+                          FSP_FSCTL_FILE_INFO *info) {
   if (allocation)
     return STATUS_NOT_SUPPORTED;
   Stat stat{};
-  auto status = bridge.resize(handle(ctx), 0, &stat);
+  auto status =
+      bridge.overwrite(handle(ctx), attributes, replace ? 1u : 0u, &stat);
   if (status >= 0)
     fill(stat, info);
   return status;
@@ -293,6 +310,21 @@ static NTSTATUS size_file(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT64 size,
     fill(stat, info);
   return status;
 }
+static NTSTATUS basic_info(FSP_FILE_SYSTEM *, PVOID ctx, UINT32 attributes,
+                           UINT64 creation, UINT64 access, UINT64 write,
+                           UINT64 change, FSP_FSCTL_FILE_INFO *info) {
+  Stat stat{};
+  auto status = bridge.basic_info(handle(ctx), attributes, creation, access,
+                                  write, change, &stat);
+  printf("NATIVE_BASIC_INFO attributes=%08lx creation=%llu access=%llu "
+         "write=%llu change=%llu status=%08lx\n",
+         static_cast<ULONG>(attributes), creation, access, write, change,
+         static_cast<ULONG>(status));
+  fflush(stdout);
+  if (status >= 0)
+    fill(stat, info);
+  return status;
+}
 static NTSTATUS can_delete(FSP_FILE_SYSTEM *, PVOID, PWSTR name) {
   return bridge.can_delete(name, length(name));
 }
@@ -307,7 +339,28 @@ static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
                           PVOID buffer, ULONG capacity, PULONG count) {
   *count = 0;
   WCHAR after[256]{};
-  if (marker) {
+  if (!marker || !wcscmp(marker, L".")) {
+    for (UINT32 parent = marker ? 1u : 0u; parent < 2; ++parent) {
+      Stat stat{};
+      UINT32 found = 0;
+      auto status = bridge.dot(handle(ctx), parent, &found, &stat);
+      if (status < 0)
+        return status;
+      if (found) {
+        alignas(8) BYTE row[sizeof(FSP_FSCTL_DIR_INFO) + 4]{};
+        auto di = reinterpret_cast<FSP_FSCTL_DIR_INFO *>(row);
+        di->Size =
+            static_cast<UINT16>(sizeof(*di) + (parent + 1) * sizeof(WCHAR));
+        fill(stat, &di->FileInfo);
+        di->FileNameBuf[0] = L'.';
+        if (parent)
+          di->FileNameBuf[1] = L'.';
+        if (!api.add(di, buffer, capacity, count))
+          return STATUS_SUCCESS;
+      }
+    }
+  }
+  if (marker && wcscmp(marker, L".") && wcscmp(marker, L"..")) {
     if (length(marker) > 255)
       return STATUS_INVALID_PARAMETER;
     wcscpy_s(after, marker);
@@ -433,11 +486,15 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, stat, lf_stat);
   LOAD(bridge, open, lf_open);
   LOAD(bridge, info, lf_info);
+  LOAD(bridge, create, lf_create);
   LOAD(bridge, read, lf_read);
   LOAD(bridge, write, lf_write);
   LOAD(bridge, resize, lf_resize);
+  LOAD(bridge, overwrite, lf_overwrite);
+  LOAD(bridge, basic_info, lf_basic_info);
   LOAD(bridge, rename, lf_rename);
   LOAD(bridge, can_delete, lf_can_delete);
+  LOAD(bridge, dot, lf_dot);
   LOAD(bridge, unlink, lf_unlink);
   LOAD(bridge, close, lf_close);
   LOAD(bridge, next, lf_next);
@@ -487,6 +544,7 @@ int wmain(int argc, wchar_t **argv) {
   callbacks.Flush = flush;
   callbacks.GetFileInfo = get_info;
   callbacks.SetFileSize = size_file;
+  callbacks.SetBasicInfo = basic_info;
   callbacks.CanDelete = can_delete;
   callbacks.Rename = rename_file;
   callbacks.GetSecurity = get_security;
@@ -521,6 +579,8 @@ int wmain(int argc, wchar_t **argv) {
   unsigned close_phase = 0;
   unsigned binding_commits = 0;
   bool close_prepared = false, close_checked = false, idle_reported = false;
+  CloseState last_close_state{};
+  bool have_close_state = false;
   std::thread commit_worker;
   std::atomic<bool> worker_done{false};
   INT32 worker_status = STATUS_PENDING;
@@ -582,6 +642,17 @@ int wmain(int argc, wchar_t **argv) {
         CloseState state{};
         if (bridge.close_state(&state) < 0)
           break;
+        if (!have_close_state ||
+            memcmp(&state, &last_close_state, sizeof(state))) {
+          printf("NORMAL_CLOSE_OBSERVED files=%llu directories=%llu commit=%u "
+                 "capture=%u retained=%u prepared=%u cleanup=%ld close=%ld\n",
+                 state.files, state.directories, state.pending_commit,
+                 state.capture, state.retained, state.prepared, cleanups,
+                 closes);
+          fflush(stdout);
+          last_close_state = state;
+          have_close_state = true;
+        }
         if (!state.files && !state.directories && !state.pending_commit &&
             !state.capture && !state.retained && !state.prepared) {
           puts("NORMAL_CLOSE_IDLE tracked_close_receipts=true "

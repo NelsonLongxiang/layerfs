@@ -13,6 +13,7 @@ CREATE TABLE fs_inode (
     born INTEGER NOT NULL CHECK(born>=0 AND (generation=-1 OR born<=generation)),
     entries INTEGER NOT NULL CHECK(entries>=0 AND (kind=2 OR entries=0)),
     subdirs INTEGER NOT NULL CHECK(subdirs>=0 AND (kind=2 OR subdirs=0)),
+    windows_attributes INTEGER NOT NULL CHECK(windows_attributes>=0 AND windows_attributes<=38 AND (windows_attributes & 38)=windows_attributes),
     epoch INTEGER NOT NULL CHECK(epoch>=0),
     height INTEGER NOT NULL CHECK(height>=0 AND height<=epoch),
     -- Whether this layer of the file has ever held a reference piece.
@@ -111,4 +112,4 @@ CREATE TABLE commit_record (
     PRIMARY KEY(operation,file_scope,kind,key)
 ) STRICT, WITHOUT ROWID;
 
-PRAGMA user_version=39;
+PRAGMA user_version=40;

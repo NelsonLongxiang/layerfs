@@ -126,6 +126,7 @@ impl<P: OverlayCapturedNamespace + OverlayOperationRecords + ?Sized> Builder<'_,
         let metadata_root = self.metadata(
             kind,
             live,
+            inode.windows_attributes,
             stored.map(|stored| stored.metadata_root),
             consumer,
         )?;
@@ -150,7 +151,10 @@ impl<P: OverlayCapturedNamespace + OverlayOperationRecords + ?Sized> Builder<'_,
         stored: InodeValue,
         live: PortableMetadata,
     ) -> ContentResult<Option<PortableMetadata>> {
-        if content_root != stored.content_root {
+        if inode.windows_attributes
+            != crate::windows_metadata::read(self.objects, stored.metadata_root)?
+            || content_root != stored.content_root
+        {
             return Ok(None);
         }
         if kind == CanonicalKind::Directory {
@@ -277,9 +281,26 @@ impl<P: OverlayCapturedNamespace + OverlayOperationRecords + ?Sized> Builder<'_,
         &self,
         kind: CanonicalKind,
         value: PortableMetadata,
+        windows_attributes: u32,
         stored: Option<InodeMetadata>,
         consumer: &mut dyn FinalizedConsumer,
     ) -> ContentResult<InodeMetadata> {
+        let old_flags = stored
+            .map(|m| crate::windows_metadata::read(self.objects, m))
+            .transpose()?
+            .unwrap_or(0);
+        if windows_attributes != old_flags {
+            let metadata = crate::windows_metadata::patch(
+                self.objects,
+                consumer,
+                kind,
+                value,
+                windows_attributes,
+                stored,
+            )?;
+            add(&mut self.shared.borrow_mut().work.metadata_patched, 1);
+            return Ok(metadata);
+        }
         let Some(InodeMetadata::Root(root)) = stored else {
             let mut owner = self.shared.borrow_mut();
             add(&mut owner.work.metadata_built, 1);

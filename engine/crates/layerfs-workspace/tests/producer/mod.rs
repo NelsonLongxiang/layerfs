@@ -169,6 +169,7 @@ pub fn fact(b: &Bench, serial: u64) -> Inode {
         born: 0,
         entries,
         subdirs: 0,
+        windows_attributes: 0,
     }
 }
 /// A real writable descriptor of a file: the engine's own open custody.

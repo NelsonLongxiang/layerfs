@@ -71,6 +71,7 @@ impl<'a> File<'a> {
             born: 0,
             entries: 0,
             subdirs: 0,
+            windows_attributes: 0,
         }
     }
     pub fn apply(&mut self, size: u64, write: Option<PayloadWrite>) {

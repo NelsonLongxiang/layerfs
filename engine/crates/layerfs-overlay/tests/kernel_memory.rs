@@ -50,6 +50,7 @@ fn remembered_regular_file_allocation_is_measured_without_a_population_cap() {
                     born: 0,
                     entries: 0,
                     subdirs: 0,
+                    windows_attributes: 0,
                 }),
                 value: serial,
             })

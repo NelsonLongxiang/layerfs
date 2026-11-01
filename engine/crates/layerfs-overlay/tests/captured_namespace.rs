@@ -28,6 +28,7 @@ fn node(serial: u64, kind: InodeKind, size: u64, born: u64) -> Inode {
         born,
         entries: 0,
         subdirs: 0,
+        windows_attributes: 0,
     }
 }
 /// The one payload cell Workspace writes for a fresh symlink or a small file.

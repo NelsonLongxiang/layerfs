@@ -10,7 +10,7 @@ use crate::{
 pub(crate) fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<Inode> {
     decode_at(row, 0)
 }
-/// The eleven inode columns starting at column `at`.
+/// The twelve inode columns starting at column `at`.
 fn decode_at(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<Inode> {
     let kind = match row.get::<_, i64>(at + 1)? {
         1 => InodeKind::File,
@@ -30,6 +30,7 @@ fn decode_at(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<Inode> {
         born: unsigned(row, at + 8)?,
         entries: unsigned(row, at + 9)?,
         subdirs: unsigned(row, at + 10)?,
+        windows_attributes: row.get(at + 11)?,
     })
 }
 /// One local row in the column order of `INODE_LOOKUP`, starting at column
@@ -37,11 +38,11 @@ fn decode_at(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<Inode> {
 pub(crate) fn local_row_at(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<LocalRow> {
     Ok(LocalRow {
         inode: decode_at(row, at)?,
-        gen: row.get(at + 11)?,
-        epoch: row.get(at + 12)?,
-        height: row.get(at + 13)?,
-        referenced: row.get(at + 14)?,
-        sequence: row.get(at + 15)?,
+        gen: row.get(at + 12)?,
+        epoch: row.get(at + 13)?,
+        height: row.get(at + 14)?,
+        referenced: row.get(at + 15)?,
+        sequence: row.get(at + 16)?,
     })
 }
 pub(crate) fn optional_serial(value: Option<i64>, column: usize) -> rusqlite::Result<Option<u64>> {
@@ -55,7 +56,9 @@ pub(crate) fn check(inode: &Inode) -> OverlayResult<()> {
         InodeKind::Directory => 0o1777,
         _ => 0o777,
     };
-    if inode.serial == 0
+    if inode.windows_attributes & !0x26 != 0
+        || (inode.kind == InodeKind::Symlink && inode.windows_attributes != 0)
+        || inode.serial == 0
         || inode.mode & !allowed != 0
         || (inode.kind == InodeKind::Symlink && inode.mode != 0o777)
         || inode.mtime_nanoseconds >= 1_000_000_000
@@ -296,6 +299,7 @@ impl Overlay {
                 // The revision this job publishes: no later row write of
                 // this serial can carry the same value.
                 &(state.revision + 1),
+                &i64::from(inode.windows_attributes),
             ],
             128,
         )?;

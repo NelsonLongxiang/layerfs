@@ -23,7 +23,15 @@ pub(crate) fn effect(
         directory,
     };
     match (operation, fresh) {
-        (Operation::Create { parent, .. }, Some(serial)) => match open {
+        (
+            Operation::Create { parent, .. }
+            | Operation::CreateWindows {
+                parent,
+                directory: false,
+                ..
+            },
+            Some(serial),
+        ) => match open {
             Some(writable) => KernelEffect::Open {
                 serial,
                 parent: *parent,
@@ -31,7 +39,15 @@ pub(crate) fn effect(
             },
             None => entry(serial, *parent, false),
         },
-        (Operation::Mkdir { parent, .. }, Some(serial)) => entry(serial, *parent, true),
+        (
+            Operation::Mkdir { parent, .. }
+            | Operation::CreateWindows {
+                parent,
+                directory: true,
+                ..
+            },
+            Some(serial),
+        ) => entry(serial, *parent, true),
         (Operation::Symlink { parent, .. }, Some(serial)) => entry(serial, *parent, false),
         (Operation::Link { serial, parent, .. }, _) => entry(*serial, *parent, false),
         _ => KernelEffect::None,

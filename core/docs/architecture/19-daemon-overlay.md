@@ -6,6 +6,29 @@ schema16. Earlier algorithm and proof pins retain their original scope; see
 
 > **Status:** Current general guide.
 
+## Windows basic flags, schema 40 (2026-11-02)
+
+The current [inode row](../../../engine/crates/layerfs-overlay/sql/schema.sql)
+adds a bounded integer `windows_attributes` containing only Hidden (0x02), System
+(0x04) and Archive (0x20). ReadOnly remains a projection of the portable owner-write
+mode. The value follows the same active/captured/orphan generation as the inode;
+insert, update, capture readers, failed-capture composition and orphan retention
+all carry it. It is not a process-local attributes table or a second database.
+Schema/application identity is checked exactly at startup; new templates use 40.
+Existing Overlay files are not migrated or reopened; retain prior evidence with
+its original schema. Global Store schema, journal and profile are unchanged.
+
+Workspace `CreateWindows`, `SetWindowsAttributes`, `SetOpenWindowsAttributes` and
+`OverwriteWindows` validate represented fields and publish them with the existing
+atomic namespace jobs. Overwrite combines truncate and flag replace/merge; a bad
+flag or time leaves all fields unchanged. Named and descriptor custody remain
+separate, including an unlinked file whose open owner still exists.
+
+Captured publication uses the existing Content opaque-attribute tree, described
+in [captured namespace construction](78-captured-namespace-construction.md#windows-basic-attribute-round-trip).
+This does not add ACLs, independent creation/access/change timestamps, reparse
+semantics, a full native metadata API or a Windows daemon/SDK route.
+
 Issue 321 step-1 temporary-state correction, 2026-10-13: each overlay
 connection selects and verifies `temp_store=MEMORY` (readback 2), in addition
 to MEMORY journal/OFF/EXCLUSIVE, mmap off and zero busy timeout. This removes

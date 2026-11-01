@@ -137,6 +137,7 @@ impl BaseView {
             born: 0,
             entries,
             subdirs,
+            windows_attributes: stat.windows_attributes,
         }))
     }
     fn base_child(&self, parent: u64, name: &PathName) -> WorkspaceResult<Option<Resolved>> {

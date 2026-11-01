@@ -9,6 +9,7 @@ mod base;
 mod construction;
 mod mutation;
 mod operations;
+mod windows_metadata;
 mod workspace;
 pub(crate) use operations::attributes;
 

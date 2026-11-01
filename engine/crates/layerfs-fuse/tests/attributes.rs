@@ -42,6 +42,7 @@ fn attributes_preserve_signed_fraction_identity_mode_and_link_count() {
         namespace_refs: 3,
         logical_len: 513,
         subdirs: 0,
+        windows_attributes: 0,
     };
     let attr = identity.attributes(&value).unwrap();
     assert_eq!(attr.ino, INodeNo(10));
@@ -90,6 +91,7 @@ fn a_directory_reports_two_links_plus_its_child_directories_and_none_once_remove
         namespace_refs,
         logical_len: 0,
         subdirs,
+        windows_attributes: 0,
     };
     let links = |value: &ViewStat| identity.attributes(value).map(|attr| attr.nlink);
     // A named directory: its name, its `.`, and one `..` per child directory.

@@ -17,6 +17,7 @@ pub struct ViewStat {
     pub serial: u64,
     pub kind: InodeKind,
     pub metadata: PortableMetadata,
+    pub windows_attributes: u32,
     pub namespace_refs: u64,
     pub logical_len: u64,
     /// Bindings of a directory that are directories: its POSIX link count
@@ -31,6 +32,7 @@ impl ViewStat {
             serial: v.serial,
             kind: v.value.kind,
             metadata: v.metadata,
+            windows_attributes: v.windows_attributes,
             namespace_refs: v.value.namespace_ref_count,
             logical_len: v.logical_len,
             subdirs,
@@ -51,6 +53,7 @@ impl From<Inode> for ViewStat {
                 mtime_seconds: v.mtime_seconds,
                 mtime_nanoseconds: v.mtime_nanoseconds,
             },
+            windows_attributes: v.windows_attributes,
             namespace_refs: v.nlink,
             logical_len: v.size,
             subdirs: v.subdirs,

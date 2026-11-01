@@ -31,6 +31,8 @@ pub struct BaseStat {
     pub serial: u64,
     pub value: InodeValue,
     pub metadata: PortableMetadata,
+    /// Persisted Windows Hidden/System/Archive flags, independent of portable mode.
+    pub windows_attributes: u32,
     pub logical_len: u64,
 }
 /// Stable immutable file classification and source, retained before external IO.
@@ -245,6 +247,10 @@ impl BaseView {
             serial,
             value,
             metadata,
+            windows_attributes: crate::windows_metadata::read(
+                self.client.as_ref(),
+                value.metadata_root,
+            )?,
             logical_len,
         })
     }

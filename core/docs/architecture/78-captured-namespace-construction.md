@@ -12,6 +12,30 @@ the producer only in a daemon test. Mounted Commit is R5. Scope, receipts,
 failed attempts and open decisions are in the
 [R4 completion record](../issues/307/R4-COMPLETION-20261008.md).
 
+## Windows basic attribute round-trip
+
+The 2026-11-02 Workspace adapter carries Hidden/System/Archive in each changed
+inode and reads them from immutable base metadata. The Content grammar is unchanged:
+[windows_metadata.rs](../../../engine/crates/layerfs-workspace/src/windows_metadata.rs)
+uses the existing opaque key domain `windows`, key `file-attributes`, with one
+four-byte big-endian value restricted to mask 0x26. Missing key/inline portable
+metadata means zero. Unknown flag bits or wrong value width are errors, not loss.
+ReadOnly maps to portable owner-write permission, not this opaque value.
+
+The captured inode producer treats a flag change as a real change even if bytes,
+mode and namespace membership match the base. It patches portable mode/mtime and
+the Windows key through one existing Content attribute operation; zero removes
+the key and unrelated opaque keys remain. No newly emitted intermediate root is
+read back, no alternate encoder is added, and the existing mtime-only suppression
+rule still applies when all value-bearing facts (including these flags) match.
+
+Active changes after capture retain their generation ownership. Known install,
+unlinked open files and last-owner reclamation use the same Overlay paths. The
+local Overlay schema is 40; global Store schema/profile and immutable object
+encodings are unchanged. This does not retrofit Project Init to import all NTFS
+metadata, add independent Windows times/ACLs/reparse data, or qualify kernel cache
+coherence and product Windows Workspace support.
+
 ## Three parts
 
 | Part | Crate | What it is |

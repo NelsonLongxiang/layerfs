@@ -11,6 +11,7 @@ pub(crate) struct Fresh<'a> {
     pub serial: u64,
     pub kind: InodeKind,
     pub mode: u32,
+    pub windows_attributes: u32,
     pub target: Option<&'a SymlinkTarget>,
 }
 fn free_name(eval: &mut Eval<'_>, parent: u64, name: &PathName) -> WorkspaceResult<Option<Inode>> {
@@ -46,6 +47,9 @@ pub(crate) fn create(
         InodeKind::Directory => 0o1777,
         _ => 0o777,
     };
+    if fresh.windows_attributes & !crate::windows_metadata::MASK != 0 {
+        return refuse(Refusal::Unsupported);
+    }
     if fresh.mode & !allowed != 0 {
         return refuse(Refusal::NotPermitted);
     }
@@ -68,6 +72,7 @@ pub(crate) fn create(
         born: eval.rows.active().number() as u64,
         entries: 0,
         subdirs: 0,
+        windows_attributes: fresh.windows_attributes,
     };
     // A symlink target is at most one cell and never changes after creation.
     let cell = (fresh.kind == InodeKind::Symlink).then(|| {

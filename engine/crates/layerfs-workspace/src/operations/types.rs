@@ -68,6 +68,13 @@ pub enum Operation {
         name: PathName,
         mode: u32,
     },
+    /// Atomic file/directory creation with represented Windows flags.
+    CreateWindows {
+        parent: u64,
+        name: PathName,
+        directory: bool,
+        attributes: u32,
+    },
     Symlink {
         parent: u64,
         name: PathName,
@@ -119,6 +126,25 @@ pub enum Operation {
         mtime: Option<Time>,
         size: Option<u64>,
     },
+    /// Windows basic attributes represented by this engine: ReadOnly maps to
+    /// owner write permission; Hidden/System/Archive are stored independently.
+    /// Absent attributes or mtime are unchanged. Other bits are refused atomically.
+    SetWindowsAttributes {
+        serial: u64,
+        attributes: Option<u32>,
+        mtime: Option<Time>,
+    },
+    SetOpenWindowsAttributes {
+        file: OpenFile,
+        attributes: Option<u32>,
+        mtime: Option<Time>,
+    },
+    /// Truncate and replace/merge Windows basic flags in one publication.
+    OverwriteWindows {
+        file: OpenFile,
+        attributes: u32,
+        replace: bool,
+    },
     /// A shared-mapping store reaching the daemon after the fact. Its bytes
     /// land at their own offset, clipped to the size current in the publishing
     /// job: a store never extends the file, and one wholly beyond the size
@@ -139,6 +165,8 @@ impl Operation {
         match self {
             Self::WriteOpen { file, .. }
             | Self::SetOpenAttributes { file, .. }
+            | Self::SetOpenWindowsAttributes { file, .. }
+            | Self::OverwriteWindows { file, .. }
             | Self::StoreOpen { file, .. } => Some(*file),
             _ => None,
         }
@@ -147,7 +175,10 @@ impl Operation {
     pub const fn creates(&self) -> bool {
         matches!(
             self,
-            Self::Create { .. } | Self::Mkdir { .. } | Self::Symlink { .. }
+            Self::Create { .. }
+                | Self::Mkdir { .. }
+                | Self::CreateWindows { .. }
+                | Self::Symlink { .. }
         )
     }
     pub fn destination_path(&self) -> Option<&[PathName]> {

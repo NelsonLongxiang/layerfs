@@ -181,6 +181,7 @@ impl NamespaceJob {
                 .ok_or(ContentError::InvalidRecord("missing reserved inode serial"))?,
             kind,
             mode,
+            windows_attributes: 0,
             target,
         })
     }
@@ -204,6 +205,33 @@ impl NamespaceJob {
                 self.fresh(InodeKind::Directory, *mode, None)?,
                 now,
             )?),
+            Operation::CreateWindows {
+                parent,
+                name,
+                directory,
+                attributes,
+            } => {
+                if attributes & !0x27 != 0 {
+                    return Err(WorkspaceError::Refused(Refusal::Unsupported));
+                }
+                let kind = if *directory {
+                    InodeKind::Directory
+                } else {
+                    InodeKind::File
+                };
+                let mode = if *directory { 0o700 } else { 0o600 };
+                let mut fresh = self.fresh(
+                    kind,
+                    if attributes & 1 != 0 {
+                        mode & !0o222
+                    } else {
+                        mode
+                    },
+                    None,
+                )?;
+                fresh.windows_attributes = attributes & crate::windows_metadata::MASK;
+                created(create::create(eval, *parent, name, fresh, now)?)
+            }
             Operation::Symlink {
                 parent,
                 name,
@@ -266,15 +294,83 @@ impl NamespaceJob {
                 mode,
                 mtime,
                 size,
-            } => attributes::set(eval, file.serial(), *mode, *mtime, *size, now)?
-                .map(|(changes, inode)| (changes, Some(inode))),
+            } => attributes::set(
+                eval,
+                file.serial(),
+                attributes::Fields {
+                    mode: *mode,
+                    mtime: *mtime,
+                    size: *size,
+                    windows: None,
+                    merge_windows: false,
+                },
+                now,
+            )?
+            .map(|(changes, inode)| (changes, Some(inode))),
             Operation::SetAttributes {
                 serial,
                 mode,
                 mtime,
                 size,
-            } => attributes::set(eval, *serial, *mode, *mtime, *size, now)?
-                .map(|(changes, inode)| (changes, Some(inode))),
+            } => attributes::set(
+                eval,
+                *serial,
+                attributes::Fields {
+                    mode: *mode,
+                    mtime: *mtime,
+                    size: *size,
+                    windows: None,
+                    merge_windows: false,
+                },
+                now,
+            )?
+            .map(|(changes, inode)| (changes, Some(inode))),
+            Operation::SetWindowsAttributes {
+                serial,
+                attributes,
+                mtime,
+            } => attributes::set(
+                eval,
+                *serial,
+                attributes::Fields {
+                    mtime: *mtime,
+                    windows: *attributes,
+                    ..Default::default()
+                },
+                now,
+            )?
+            .map(|(changes, inode)| (changes, Some(inode))),
+            Operation::SetOpenWindowsAttributes {
+                file,
+                attributes,
+                mtime,
+            } => attributes::set(
+                eval,
+                file.serial(),
+                attributes::Fields {
+                    mtime: *mtime,
+                    windows: *attributes,
+                    ..Default::default()
+                },
+                now,
+            )?
+            .map(|(changes, inode)| (changes, Some(inode))),
+            Operation::OverwriteWindows {
+                file,
+                attributes,
+                replace,
+            } => attributes::set(
+                eval,
+                file.serial(),
+                attributes::Fields {
+                    size: Some(0),
+                    windows: Some(*attributes),
+                    merge_windows: !replace,
+                    ..Default::default()
+                },
+                now,
+            )?
+            .map(|(changes, inode)| (changes, Some(inode))),
             Operation::Write {
                 serial,
                 position,

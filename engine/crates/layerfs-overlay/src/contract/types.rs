@@ -70,6 +70,8 @@ pub struct Inode {
     /// directories; zero for other kinds. A directory's POSIX link count is
     /// two more than this. It is never the `nlink` reference count.
     pub subdirs: u64,
+    /// Windows Hidden/System/Archive bits; zero on an unannotated inode.
+    pub windows_attributes: u32,
 }
 /// One final name binding; None is a whiteout, names remain binary in SQL.
 #[derive(Clone, Debug, Eq, PartialEq)]

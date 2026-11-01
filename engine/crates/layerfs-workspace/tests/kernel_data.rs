@@ -55,6 +55,7 @@ fn hold(b: &Bench, mount: KernelMount, serial: u64, kind: InodeKind) {
         born: 0,
         entries: 0,
         subdirs: 0,
+        windows_attributes: 0,
     };
     b.overlay
         .observe_kernel_visit(mount, 1, None, true, |_, _| {
