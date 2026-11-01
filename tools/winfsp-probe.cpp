@@ -1,13 +1,12 @@
-// Native WinFsp callback diagnostic, not LayerFS storage. Build with
-// winfsp-build.ps1. winfsp-probe.exe <absolute-installed-dll>
-// <new-absolute-mount> <new-control-dir>
+// Native WinFsp -> Rust Workspace/Overlay diagnostic. Build: winfsp-build.ps1.
+// winfsp-probe.exe <installed-WinFsp-dll> <new-mount> <new-control>
+// <Rust-bridge-dll>
 #define NOMINMAX
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
 #include <winfsp/winfsp.h>
 #include <sddl.h>
-
 struct Api {
   HMODULE dll = nullptr;
   decltype(&FspFileSystemCreate) create = nullptr;
@@ -18,26 +17,61 @@ struct Api {
   decltype(&FspFileSystemStopDispatcher) stop = nullptr;
   decltype(&FspFileSystemAddDirInfo) add = nullptr;
 } api;
-// ponytail: one file, 64 KiB fixed diagnostic. This is NOT a production
-// cap/backend.
-struct Node {
-  FSP_FSCTL_FILE_INFO info{};
-  bool live = false;
-  BYTE bytes[65536]{};
-} root, file;
-static WCHAR filename[32] = L"\\probe.bin";
-static SRWLOCK guard = SRWLOCK_INIT;
-static PSECURITY_DESCRIPTOR security = nullptr;
-static unsigned creates = 0, opens = 0, reads = 0, writes = 0, renames = 0,
-                cleanups = 0, closes = 0, deletes = 0;
-struct Lock {
-  Lock() { AcquireSRWLockExclusive(&guard); }
-  ~Lock() { ReleaseSRWLockExclusive(&guard); }
+
+struct Stat {
+  UINT64 serial, size;
+  INT64 mtime;
+  UINT32 nanos, mode, directory, reserved;
 };
-static Node *lookup(PCWSTR name) {
-  if (0 == wcscmp(name, L"\\"))
-    return &root;
-  return file.live && 0 == wcscmp(name, filename) ? &file : nullptr;
+static_assert(sizeof(Stat) == 40, "Rust ABI Stat size");
+struct Bridge {
+  HMODULE dll = nullptr;
+  INT32(__cdecl *start)(PCWSTR, UINT32) = nullptr;
+  INT32(__cdecl *stat)(PCWSTR, UINT32, Stat *) = nullptr;
+  INT32(__cdecl *open)
+  (PCWSTR, UINT32, UINT32, UINT32, UINT64 *, Stat *) = nullptr;
+  INT32(__cdecl *info)(UINT64, Stat *) = nullptr;
+  INT32(__cdecl *read)(UINT64, UINT64, PVOID, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *write)
+  (UINT64, UINT64, PVOID, UINT32, UINT32, Stat *) = nullptr;
+  INT32(__cdecl *resize)(UINT64, UINT64, Stat *) = nullptr;
+  INT32(__cdecl *rename)(PCWSTR, UINT32, PCWSTR, UINT32, UINT32) = nullptr;
+  INT32(__cdecl *unlink)(PCWSTR, UINT32) = nullptr;
+  INT32(__cdecl *close)(UINT64) = nullptr;
+  INT32(__cdecl *next)
+  (PCWSTR, UINT32, PWSTR, UINT32, UINT32 *, Stat *) = nullptr;
+  INT32(__cdecl *capture)() = nullptr;
+  INT32(__cdecl *captured)(PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *observe)() = nullptr;
+  INT32(__cdecl *finish)() = nullptr;
+} bridge;
+static PSECURITY_DESCRIPTOR security = nullptr;
+static volatile LONG creates = 0, opens = 0, reads = 0, writes = 0, renames = 0,
+                     cleanups = 0, closes = 0, deletes = 0, callback_error = 0;
+static UINT64 root_serial = 0;
+static UINT32 length(PCWSTR text) {
+  return text ? static_cast<UINT32>(wcslen(text)) : 0;
+}
+static UINT64 handle(PVOID ctx) {
+  return static_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx)->UserContext2;
+}
+static void fill(const Stat &stat, FSP_FSCTL_FILE_INFO *info) {
+  *info = {};
+  info->FileAttributes =
+      stat.directory ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
+  if (!stat.directory && !(stat.mode & 0200))
+    info->FileAttributes |= FILE_ATTRIBUTE_READONLY;
+  info->IndexNumber = stat.serial;
+  info->FileSize = stat.size;
+  info->AllocationSize = (stat.size + 4095) & ~UINT64(4095);
+  if (stat.mtime >= -11644473600LL) {
+    auto time = (static_cast<UINT64>(stat.mtime + 11644473600LL) * 10000000) +
+                (stat.nanos / 100);
+    info->CreationTime = time;
+    info->LastAccessTime = time;
+    info->LastWriteTime = time;
+    info->ChangeTime = time;
+  }
 }
 static NTSTATUS copy_security(PSECURITY_DESCRIPTOR target, SIZE_T *size) {
   if (!size)
@@ -52,221 +86,222 @@ static NTSTATUS copy_security(PSECURITY_DESCRIPTOR target, SIZE_T *size) {
   return STATUS_SUCCESS;
 }
 static NTSTATUS volume(FSP_FILE_SYSTEM *, FSP_FSCTL_VOLUME_INFO *info) {
-  Lock lock;
   *info = {};
-  info->TotalSize = 65536;
-  info->FreeSize = 65536 - file.info.FileSize;
-  constexpr WCHAR label[] = L"LayerFS request probe";
+  info->TotalSize = 1024ULL * 1024 * 1024;
+  info->FreeSize = info->TotalSize;
+  constexpr WCHAR label[] = L"LayerFS Overlay probe";
   info->VolumeLabelLength = sizeof(label) - sizeof(WCHAR);
   memcpy(info->VolumeLabel, label, sizeof(label));
   return STATUS_SUCCESS;
 }
 static NTSTATUS security_name(FSP_FILE_SYSTEM *, PWSTR name, PUINT32 attrs,
                               PSECURITY_DESCRIPTOR sd, SIZE_T *size) {
-  Lock lock;
-  auto n = lookup(name);
-  if (!n)
-    return STATUS_OBJECT_NAME_NOT_FOUND;
-  if (attrs)
-    *attrs = n->info.FileAttributes;
+  Stat stat{};
+  auto status = bridge.stat(name, length(name), &stat);
+  if (status < 0)
+    return status;
+  if (attrs) {
+    FSP_FSCTL_FILE_INFO info{};
+    fill(stat, &info);
+    *attrs = info.FileAttributes;
+  }
   return copy_security(sd, size);
 }
 static NTSTATUS get_security(FSP_FILE_SYSTEM *, PVOID, PSECURITY_DESCRIPTOR sd,
                              SIZE_T *size) {
-  Lock lock;
   return copy_security(sd, size);
 }
-static NTSTATUS open_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32, UINT32,
+static NTSTATUS open_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32, UINT32 access,
                           PVOID *ctx, FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  auto n = lookup(name);
-  if (!n)
-    return STATUS_OBJECT_NAME_NOT_FOUND;
-  *ctx = n;
-  *info = n->info;
-  ++opens;
+  Stat stat{};
+  UINT64 held = 0;
+  auto status = bridge.open(
+      name, length(name), 0,
+      (access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0, &held, &stat);
+  if (status < 0)
+    return status;
+  auto full = reinterpret_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx);
+  full->UserContext = stat.serial;
+  full->UserContext2 = held;
+  fill(stat, info);
+  InterlockedIncrement(&opens);
   return STATUS_SUCCESS;
 }
 static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
-                            UINT32, UINT32 attrs, PSECURITY_DESCRIPTOR,
+                            UINT32, UINT32, PSECURITY_DESCRIPTOR,
                             UINT64 allocation, PVOID *ctx,
                             FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  if (options & FILE_DIRECTORY_FILE)
+  if (options & FILE_DIRECTORY_FILE || allocation)
     return STATUS_NOT_SUPPORTED;
-  if (0 != wcscmp(name, L"\\probe.bin"))
-    return STATUS_NOT_SUPPORTED;
-  if (file.live)
-    return STATUS_OBJECT_NAME_COLLISION;
-  // Never recycle this one diagnostic node while kernel references might
-  // remain.
-  if (creates)
-    return STATUS_NOT_SUPPORTED;
-  if (allocation > sizeof(file.bytes))
-    return STATUS_DISK_FULL;
-  file = {};
-  file.live = true;
-  file.info.FileAttributes = attrs | FILE_ATTRIBUTE_ARCHIVE;
-  file.info.IndexNumber = 2;
-  file.info.AllocationSize = (allocation + 4095) & ~UINT64(4095);
-  wcscpy_s(filename, L"\\probe.bin");
-  *ctx = &file;
-  *info = file.info;
-  ++creates;
+  Stat stat{};
+  UINT64 held = 0;
+  auto status = bridge.open(name, length(name), 1, 1, &held, &stat);
+  if (status < 0)
+    return status;
+  auto full = reinterpret_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx);
+  full->UserContext = stat.serial;
+  full->UserContext2 = held;
+  fill(stat, info);
+  InterlockedIncrement(&creates);
   return STATUS_SUCCESS;
 }
-static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32 attrs,
-                          BOOLEAN replace, UINT64 allocation,
-                          FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  auto n = static_cast<Node *>(ctx);
-  if (n != &file || allocation > sizeof(file.bytes))
+static NTSTATUS overwrite(FSP_FILE_SYSTEM *, PVOID ctx, UINT32, BOOLEAN,
+                          UINT64 allocation, FSP_FSCTL_FILE_INFO *info) {
+  if (allocation)
     return STATUS_NOT_SUPPORTED;
-  n->info.FileSize = 0;
-  n->info.AllocationSize = (allocation + 4095) & ~UINT64(4095);
-  n->info.FileAttributes = replace ? attrs : n->info.FileAttributes | attrs;
-  *info = n->info;
-  return STATUS_SUCCESS;
+  Stat stat{};
+  auto status = bridge.resize(handle(ctx), 0, &stat);
+  if (status >= 0)
+    fill(stat, info);
+  return status;
 }
-static VOID cleanup(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, ULONG flags) {
-  Lock lock;
-  ++cleanups;
-  if ((flags & FspCleanupDelete) && ctx == &file) {
-    file.live = false;
-    ++deletes;
+static VOID cleanup(FSP_FILE_SYSTEM *, PVOID, PWSTR name, ULONG flags) {
+  InterlockedIncrement(&cleanups);
+  if (flags & FspCleanupDelete) {
+    auto status = bridge.unlink(name, length(name));
+    if (status < 0) {
+      InterlockedExchange(&callback_error, 1);
+      fprintf(stderr, "OVERLAY_CLEANUP_FAIL %08lx\n",
+              static_cast<ULONG>(status));
+    } else
+      InterlockedIncrement(&deletes);
   }
+  // Keep Rust OpenFile/KernelDirectory until Close, not Cleanup.
 }
-static VOID close_file(FSP_FILE_SYSTEM *, PVOID) {
-  Lock lock;
-  ++closes;
+static VOID close_file(FSP_FILE_SYSTEM *, PVOID ctx) {
+  auto status = bridge.close(handle(ctx));
+  if (status < 0) {
+    InterlockedExchange(&callback_error, 1);
+    fprintf(stderr, "OVERLAY_CLOSE_FAIL %08lx\n", static_cast<ULONG>(status));
+  }
+  InterlockedIncrement(&closes);
 }
 static NTSTATUS read_file(FSP_FILE_SYSTEM *, PVOID ctx, PVOID buffer,
-                          UINT64 offset, ULONG length, PULONG count) {
-  Lock lock;
-  auto n = static_cast<Node *>(ctx);
+                          UINT64 offset, ULONG size, PULONG count) {
   *count = 0;
-  if (n != &file)
-    return STATUS_FILE_IS_A_DIRECTORY;
-  if (offset >= n->info.FileSize)
-    return STATUS_END_OF_FILE;
-  UINT64 available = n->info.FileSize - offset;
-  *count = static_cast<ULONG>(available < length ? available : length);
-  memcpy(buffer, n->bytes + static_cast<size_t>(offset), *count);
-  ++reads;
-  return STATUS_SUCCESS;
+  while (*count < size) {
+    UINT32 got = 0;
+    auto n = size - *count;
+    if (n > 131072)
+      n = 131072;
+    auto status = bridge.read(handle(ctx), offset + *count,
+                              static_cast<BYTE *>(buffer) + *count, n, &got);
+    if (status < 0)
+      return status;
+    *count += got;
+    if (got < n)
+      break;
+  }
+  InterlockedIncrement(&reads);
+  return *count || size == 0 ? STATUS_SUCCESS : STATUS_END_OF_FILE;
 }
 static NTSTATUS write_file(FSP_FILE_SYSTEM *, PVOID ctx, PVOID buffer,
-                           UINT64 offset, ULONG length, BOOLEAN append,
+                           UINT64 offset, ULONG size, BOOLEAN append,
                            BOOLEAN constrained, PULONG count,
                            FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  auto n = static_cast<Node *>(ctx);
+  Stat stat{};
   *count = 0;
-  if (n != &file)
-    return STATUS_FILE_IS_A_DIRECTORY;
+  auto status = bridge.info(handle(ctx), &stat);
+  if (status < 0)
+    return status;
   if (append)
-    offset = n->info.FileSize;
+    offset = stat.size;
   if (constrained) {
-    if (offset >= n->info.FileSize) {
-      *info = n->info;
+    if (offset >= stat.size) {
+      fill(stat, info);
       return STATUS_SUCCESS;
     }
-    auto remain = n->info.FileSize - offset;
-    if (remain < length)
-      length = static_cast<ULONG>(remain);
+    auto remain = stat.size - offset;
+    if (remain < size)
+      size = static_cast<ULONG>(remain);
   }
-  if (offset > sizeof(n->bytes) || length > sizeof(n->bytes) - offset)
-    return STATUS_DISK_FULL;
-  if (offset > n->info.FileSize)
-    memset(n->bytes + n->info.FileSize, 0,
-           static_cast<size_t>(offset - n->info.FileSize));
-  memcpy(n->bytes + offset, buffer, length);
-  auto end = offset + length;
-  if (end > n->info.FileSize)
-    n->info.FileSize = end;
-  n->info.AllocationSize = (n->info.FileSize + 4095) & ~UINT64(4095);
-  *count = length;
-  *info = n->info;
-  ++writes;
+  while (*count < size) {
+    UINT32 n = size - *count;
+    if (n > 131072)
+      n = 131072;
+    status = bridge.write(handle(ctx), offset + *count,
+                          static_cast<BYTE *>(buffer) + *count, n,
+                          (append ? 1u : 0u) | (constrained ? 2u : 0u), &stat);
+    if (status < 0)
+      return status;
+    *count += n;
+  }
+  fill(stat, info);
+  InterlockedIncrement(&writes);
   return STATUS_SUCCESS;
 }
 static NTSTATUS get_info(FSP_FILE_SYSTEM *, PVOID ctx,
                          FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  *info = static_cast<Node *>(ctx)->info;
-  return STATUS_SUCCESS;
+  Stat stat{};
+  auto status = bridge.info(handle(ctx), &stat);
+  if (status >= 0)
+    fill(stat, info);
+  return status;
 }
-static NTSTATUS flush(FSP_FILE_SYSTEM *, PVOID ctx, FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  if (ctx)
-    *info = static_cast<Node *>(ctx)->info;
-  return STATUS_SUCCESS;
-}
-static NTSTATUS basic(FSP_FILE_SYSTEM *, PVOID ctx, UINT32 attrs, UINT64 c,
-                      UINT64 a, UINT64 w, UINT64 ch,
+static NTSTATUS flush(FSP_FILE_SYSTEM *fs, PVOID ctx,
                       FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  auto n = static_cast<Node *>(ctx);
-  if (attrs != INVALID_FILE_ATTRIBUTES)
-    n->info.FileAttributes = attrs;
-  if (c)
-    n->info.CreationTime = c;
-  if (a)
-    n->info.LastAccessTime = a;
-  if (w)
-    n->info.LastWriteTime = w;
-  if (ch)
-    n->info.ChangeTime = ch;
-  *info = n->info;
-  return STATUS_SUCCESS;
+  return ctx ? get_info(fs, ctx, info) : STATUS_SUCCESS;
 }
-static NTSTATUS size_file(FSP_FILE_SYSTEM *, PVOID ctx, UINT64 size,
+static NTSTATUS size_file(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT64 size,
                           BOOLEAN allocation, FSP_FSCTL_FILE_INFO *info) {
-  Lock lock;
-  auto n = static_cast<Node *>(ctx);
-  if (n != &file || size > sizeof(n->bytes))
-    return STATUS_DISK_FULL;
-  if (!allocation || size < n->info.FileSize) {
-    if (size > n->info.FileSize)
-      memset(n->bytes + n->info.FileSize, 0,
-             static_cast<size_t>(size - n->info.FileSize));
-    n->info.FileSize = size;
-  }
-  n->info.AllocationSize =
-      ((allocation ? size : n->info.FileSize) + 4095) & ~UINT64(4095);
-  *info = n->info;
-  return STATUS_SUCCESS;
+  Stat stat{};
+  auto status = bridge.info(handle(ctx), &stat);
+  if (status < 0)
+    return status;
+  if (allocation && size >= stat.size)
+    return get_info(fs, ctx, info); // no reservation of disposable backing
+  status = bridge.resize(handle(ctx), size, &stat);
+  if (status >= 0)
+    fill(stat, info);
+  return status;
 }
 static NTSTATUS can_delete(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR) {
-  return ctx == &file ? STATUS_SUCCESS : STATUS_ACCESS_DENIED;
+  Stat stat{};
+  auto status = bridge.info(handle(ctx), &stat);
+  return status < 0       ? status
+         : stat.directory ? STATUS_NOT_SUPPORTED
+                          : STATUS_SUCCESS;
 }
-static NTSTATUS rename_file(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR name,
-                            BOOLEAN) {
-  Lock lock;
-  if (ctx != &file || 0 != wcscmp(name, L"\\renamed.bin"))
-    return STATUS_NOT_SUPPORTED;
-  wcscpy_s(filename, name);
-  ++renames;
-  return STATUS_SUCCESS;
+static NTSTATUS rename_file(FSP_FILE_SYSTEM *, PVOID, PWSTR from, PWSTR to,
+                            BOOLEAN replace) {
+  auto status = bridge.rename(from, length(from), to, length(to), replace);
+  if (status >= 0)
+    InterlockedIncrement(&renames);
+  return status;
 }
 static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
-                          PVOID buffer, ULONG length, PULONG count) {
-  Lock lock;
+                          PVOID buffer, ULONG capacity, PULONG count) {
   *count = 0;
-  if (ctx != &root)
-    return STATUS_NOT_A_DIRECTORY;
-  if (file.live && (!marker || wcscmp(filename + 1, marker) > 0)) {
-    alignas(8) BYTE bytes[sizeof(FSP_FSCTL_DIR_INFO) + 64]{};
-    auto di = reinterpret_cast<FSP_FSCTL_DIR_INFO *>(bytes);
-    auto n = wcslen(filename + 1) * sizeof(WCHAR);
-    di->Size = static_cast<UINT16>(sizeof(FSP_FSCTL_DIR_INFO) + n);
-    di->FileInfo = file.info;
-    memcpy(di->FileNameBuf, filename + 1, n);
-    if (!api.add(di, buffer, length, count))
-      return STATUS_SUCCESS;
+  if (static_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx)->UserContext !=
+      root_serial)
+    return STATUS_NOT_SUPPORTED;
+  WCHAR after[256]{};
+  if (marker) {
+    if (length(marker) > 255)
+      return STATUS_INVALID_PARAMETER;
+    wcscpy_s(after, marker);
   }
-  api.add(nullptr, buffer, length, count);
-  return STATUS_SUCCESS;
+  for (;;) {
+    WCHAR name[256]{};
+    UINT32 len = 0;
+    Stat stat{};
+    auto status = bridge.next(after, length(after), name, 255, &len, &stat);
+    if (status < 0)
+      return status;
+    if (!len) {
+      api.add(nullptr, buffer, capacity, count);
+      return STATUS_SUCCESS;
+    }
+    alignas(8) BYTE row[sizeof(FSP_FSCTL_DIR_INFO) + 512]{};
+    auto di = reinterpret_cast<FSP_FSCTL_DIR_INFO *>(row);
+    di->Size = static_cast<UINT16>(sizeof(*di) + len * sizeof(WCHAR));
+    fill(stat, &di->FileInfo);
+    memcpy(di->FileNameBuf, name, len * sizeof(WCHAR));
+    if (!api.add(di, buffer, capacity, count))
+      return STATUS_SUCCESS;
+    name[len] = 0;
+    wcscpy_s(after, name);
+  }
 }
 static bool owner_security() {
   HANDLE token = nullptr;
@@ -301,55 +336,88 @@ static bool fresh_absolute(PCWSTR path) {
     return false;
   return GetLastError() == ERROR_FILE_NOT_FOUND;
 }
+
+static bool mark(PCWSTR root, PCWSTR phase) {
+  WCHAR path[32768];
+  swprintf_s(path, L"%s\\%s", root, phase);
+  HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE)
+    return false;
+  CloseHandle(h);
+  return true;
+}
+static bool exists(PCWSTR root, PCWSTR phase) {
+  WCHAR path[32768];
+  swprintf_s(path, L"%s\\%s", root, phase);
+  return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+}
 int wmain(int argc, wchar_t **argv) {
   puts("WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos");
-  puts("https://github.com/winfsp/winfsp - internal diagnostic, not LayerFS "
-       "Workspace");
-  if (argc != 4) {
-    fwprintf(stderr, L"usage: probe <installed-dll> <new-absolute-mount> "
-                     L"<new-control-dir>\n");
+  puts("https://github.com/winfsp/winfsp - diagnostic Rust Overlay bridge");
+  if (argc != 5) {
+    fwprintf(stderr, L"usage: probe <installed-WinFsp-dll> <new-mount> "
+                     L"<new-control> <Rust-bridge-dll>\n");
     return 1;
   }
   if (!fresh_absolute(argv[2])) {
     fwprintf(stderr, L"refusing non-absolute or existing mount\n");
     return 1;
   }
-  if (!fresh_absolute(argv[3]) || 0 == _wcsicmp(argv[2], argv[3])) {
+  if (!fresh_absolute(argv[3]) || 0 == _wcsicmp(argv[2], argv[3]) ||
+      !CreateDirectoryW(argv[3], nullptr)) {
     fwprintf(stderr, L"refusing invalid/existing control\n");
-    return 1;
-  }
-  if (!CreateDirectoryW(argv[3], nullptr)) {
-    fwprintf(stderr, L"refusing existing/invalid control: %lu\n",
-             GetLastError());
     return 1;
   }
   api.dll = LoadLibraryExW(argv[1], nullptr,
                            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
                                LOAD_LIBRARY_SEARCH_SYSTEM32);
-  if (!api.dll) {
-    fwprintf(stderr, L"WinFsp load failed %lu\n", GetLastError());
+  bridge.dll = LoadLibraryExW(argv[4], nullptr,
+                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                                  LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (!api.dll || !bridge.dll) {
+    fprintf(stderr, "DLL load failed %lu\n", GetLastError());
     return 2;
   }
-#define LOAD(member, symbol)                                                   \
-  api.member = reinterpret_cast<decltype(api.member)>(                         \
-      GetProcAddress(api.dll, #symbol));                                       \
-  if (!api.member)                                                             \
-  return 2
-  LOAD(create, FspFileSystemCreate);
-  LOAD(destroy, FspFileSystemDelete);
-  LOAD(mount, FspFileSystemSetMountPoint);
-  LOAD(unmount, FspFileSystemRemoveMountPoint);
-  LOAD(start, FspFileSystemStartDispatcher);
-  LOAD(stop, FspFileSystemStopDispatcher);
-  LOAD(add, FspFileSystemAddDirInfo);
-#undef LOAD
-  if (!owner_security()) {
-    fwprintf(stderr, L"owner security failed %lu\n", GetLastError());
-    return 1;
+#define LOAD(object, member, symbol)                                           \
+  object.member = reinterpret_cast<decltype(object.member)>(                   \
+      GetProcAddress(object.dll, #symbol));                                    \
+  if (!object.member) {                                                        \
+    fprintf(stderr, "export missing: " #symbol "\n");                          \
+    return 2;                                                                  \
   }
-  root.live = true;
-  root.info.FileAttributes = FILE_ATTRIBUTE_DIRECTORY;
-  root.info.IndexNumber = 1;
+  LOAD(api, create, FspFileSystemCreate);
+  LOAD(api, destroy, FspFileSystemDelete);
+  LOAD(api, mount, FspFileSystemSetMountPoint);
+  LOAD(api, unmount, FspFileSystemRemoveMountPoint);
+  LOAD(api, start, FspFileSystemStartDispatcher);
+  LOAD(api, stop, FspFileSystemStopDispatcher);
+  LOAD(api, add, FspFileSystemAddDirInfo);
+  LOAD(bridge, start, lf_start);
+  LOAD(bridge, stat, lf_stat);
+  LOAD(bridge, open, lf_open);
+  LOAD(bridge, info, lf_info);
+  LOAD(bridge, read, lf_read);
+  LOAD(bridge, write, lf_write);
+  LOAD(bridge, resize, lf_resize);
+  LOAD(bridge, rename, lf_rename);
+  LOAD(bridge, unlink, lf_unlink);
+  LOAD(bridge, close, lf_close);
+  LOAD(bridge, next, lf_next);
+  LOAD(bridge, capture, lf_capture);
+  LOAD(bridge, captured, lf_captured);
+  LOAD(bridge, observe, lf_observe);
+  LOAD(bridge, finish, lf_finish);
+#undef LOAD
+  WCHAR store[32768];
+  swprintf_s(store, L"%s\\store", argv[3]);
+  auto started = bridge.start(store, length(store));
+  if (started < 0)
+    return 1;
+  Stat root{};
+  if (bridge.stat(L"\\", 1, &root) < 0 || !owner_security())
+    return 1;
+  root_serial = root.serial;
   FSP_FILE_SYSTEM_INTERFACE callbacks{};
   callbacks.GetVolumeInfo = volume;
   callbacks.GetSecurityByName = security_name;
@@ -362,7 +430,6 @@ int wmain(int argc, wchar_t **argv) {
   callbacks.Write = write_file;
   callbacks.Flush = flush;
   callbacks.GetFileInfo = get_info;
-  callbacks.SetBasicInfo = basic;
   callbacks.SetFileSize = size_file;
   callbacks.CanDelete = can_delete;
   callbacks.Rename = rename_file;
@@ -379,53 +446,71 @@ int wmain(int argc, wchar_t **argv) {
   params.CasePreservedNames = 1;
   params.UnicodeOnDisk = 1;
   params.PersistentAcls = 1;
+  params.UmFileContextIsFullContext = 1;
   params.FlushAndPurgeOnCleanup = 1;
-  wcscpy_s(params.FileSystemName, L"LayerFS-Probe");
+  wcscpy_s(params.FileSystemName, L"LayerFS-Overlay");
   FSP_FILE_SYSTEM *fs = nullptr;
   NTSTATUS status =
       api.create(const_cast<PWSTR>(L"WinFsp.Disk"), &params, &callbacks, &fs);
   if (status < 0) {
-    fprintf(stderr, "create NTSTATUS=%08lx\n",
-            static_cast<unsigned long>(status));
-    LocalFree(security);
-    FreeLibrary(api.dll);
+    fprintf(stderr, "create NTSTATUS=%08lx\n", static_cast<ULONG>(status));
     return 1;
   }
   status = api.mount(fs, argv[2]);
   if (status >= 0)
     status = api.start(fs, 2);
-  bool done = false;
-  if (status >= 0) {
-    WCHAR ready[32768], stop[32768];
-    swprintf_s(ready, L"%s\\ready", argv[3]);
-    swprintf_s(stop, L"%s\\stop", argv[3]);
-    HANDLE h = CreateFileW(ready, GENERIC_WRITE, 0, nullptr, CREATE_NEW,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-      CloseHandle(h);
-      puts("NATIVE_DISPATCH_READY");
-      fflush(stdout);
-      auto deadline = GetTickCount64() + 30000;
-      while (GetTickCount64() < deadline) {
-        if (GetFileAttributesW(stop) != INVALID_FILE_ATTRIBUTES) {
-          done = true;
+  bool done = false, captured = false, checked = false;
+  if (status >= 0 && mark(argv[3], L"ready")) {
+    puts("NATIVE_OVERLAY_READY");
+    fflush(stdout);
+    auto deadline = GetTickCount64() + 45000;
+    while (GetTickCount64() < deadline) {
+      if (!captured && exists(argv[3], L"capture")) {
+        if (bridge.capture() < 0)
           break;
-        }
-        Sleep(10);
+        captured = true;
+        if (!mark(argv[3], L"captured"))
+          break;
       }
+      if (captured && !checked && exists(argv[3], L"check-capture")) {
+        BYTE bytes[131072]{};
+        UINT32 count = 0;
+        constexpr char expected[] = "before capture";
+        if (bridge.captured(L"\\capture.txt", 12, bytes, sizeof(bytes),
+                            &count) < 0 ||
+            count != sizeof(expected) - 1 ||
+            memcmp(bytes, expected, count) != 0)
+          break;
+        puts("OVERLAY_CAPTURE_STABLE old_bytes=true later_mutation=true");
+        checked = true;
+        if (!mark(argv[3], L"capture-checked"))
+          break;
+      }
+      if (exists(argv[3], L"stop")) {
+        done = true;
+        break;
+      }
+      Sleep(10);
     }
   } else
-    fprintf(stderr, "mount/start NTSTATUS=%08lx\n",
-            static_cast<unsigned long>(status));
+    fprintf(stderr, "mount/start NTSTATUS=%08lx\n", static_cast<ULONG>(status));
   api.stop(fs);
   api.unmount(fs);
   api.destroy(fs);
   LocalFree(security);
-  FreeLibrary(api.dll);
-  printf("CALLBACKS create=%u open=%u read=%u write=%u rename=%u cleanup=%u "
-         "close=%u delete=%u\n",
-         creates, opens, reads, writes, renames, cleanups, closes, deletes);
-  puts("NOT_RUN LayerFS_Overlay capture Save History mapped_lifecycle "
+  auto closed = bridge.finish();
+  printf("CALLBACKS create=%ld open=%ld read=%ld write=%ld rename=%ld "
+         "cleanup=%ld close=%ld delete=%ld errors=%ld\n",
+         creates, opens, reads, writes, renames, cleanups, closes, deletes,
+         callback_error);
+  if (closed == 0) {
+    FreeLibrary(bridge.dll);
+    FreeLibrary(api.dll);
+  } // failure keeps original Rust owner state until process ends
+  puts("NOT_RUN Save History product_Workspace mapped_lifecycle "
        "full_repository");
-  return done && creates && reads && writes && renames && deletes ? 0 : 1;
+  return done && captured && checked && closed == 0 && !callback_error &&
+                 creates && reads && writes && renames && deletes
+             ? 0
+             : 1;
 }

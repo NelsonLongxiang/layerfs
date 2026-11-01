@@ -473,11 +473,13 @@ version = "0.1.0"
 dependencies = [
  "layerfs-content",
  "layerfs-history",
+ "layerfs-overlay",
  "layerfs-persistence",
  "layerfs-project",
  "layerfs-storage",
  "layerfs-store-service",
  "layerfs-telemetry",
+ "layerfs-workspace",
  "windows-sys",
 ]
 

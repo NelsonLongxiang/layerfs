@@ -149,3 +149,48 @@ and output are retained. The corrected test asserts the exact observed operation
 not a universal claim about every rename path or Windows version. It does not
 implement multi-file capture, mutation generations or Commit. See the
 [native request-path result and next step](../../core/docs/issues/352/WINDOWS-NATIVE-REQUEST-PATH-2026-11-01.md).
+
+## WinFsp -> real Rust Workspace/Overlay bridge
+
+The diagnostic library is now named layerfs_native_probe (rlib + cdylib), keeping
+its PDB name distinct from the existing layerfs-projfs-probe CLI on Windows.
+Existing ProjFS CLI modes are unchanged. The first-party dependencies are the
+already locked layerfs-workspace and layerfs-overlay crates, not a new database
+or filesystem encoder. Root manifests/lock and product sources are unchanged.
+
+The C++ native host in ../winfsp-probe.cpp now delegates its state to this Rust
+library: one real Disposable Store fixture, one bound Workspace and the existing
+MEMORY/OFF/EXCLUSIVE Overlay owner. No C++ file-content array remains. The bridge
+uses public StoreService/BoundWorkspace, Mutation and native kernel read/open/close
+ports. File identities and serial ranges come from those ports, never a local
+inode counter. FFI request tokens are not inode identities.
+
+Build this library/CLI as above, then the native host using ../winfsp-build.ps1.
+Run (from repository root) under a <=120-second ceiling:
+
+```powershell
+node tools/winfsp-smoke.mjs <native-host-exe> <installed-WinFsp-dll> <target>/debug/layerfs_native_probe.dll <fresh-output>
+```
+
+The ordinary Windows process reads an existing Store file, writes/reads 300KB
+through bounded Overlay windows, truncates, renames, deletes and recreates with a
+new inode. A descriptor remains open across capture; after a later write the live
+file changes while the retained captured reader still yields the old bytes.
+The first write is closed before capture so the test does not pretend dirty kernel
+cache bytes have already been published. Cleanup keeps descriptor ownership;
+Close releases its exact OpenFile/KernelDirectory and lookup reference.
+The direct Rust integration test additionally reads/writes an unlinked open file.
+
+This is a non-shipped integration slice, not the product Workspace API. Only exact
+UTF-8 root entries are admitted; nested path operations, new directories, links,
+complete Windows metadata/security changes, concurrent callbacks/capture and
+mapped writes remain unqualified. A diagnostic bridge mutex serializes requests
+and control (never the product SQL lock across Store I/O); replace this admission
+before production. The existing Mutation reply-attempt boundary is reused; full
+native callback reply/capture ordering is not claimed by the sequential proof.
+Unknown owner errors latch refusal and retain custody instead of cleanup/replay.
+
+The explicit diagnostic capture resolves without history publication during final
+close; it is not a Commit or failed product Commit. No fs.apply, re-Init after
+mutation, native-tree scan/copy, manual SQL or alternate content encoding is used.
+Save/History/Commit and product W2/W3/W4 qualification remain separate work.

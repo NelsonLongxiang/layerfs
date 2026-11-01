@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #[cfg(windows)]
 mod child_store;
-use layerfs_projfs_probe::{seed, NAME};
+use layerfs_native_probe::{seed, NAME};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -74,7 +74,7 @@ fn main() {
             }
             return;
         }
-        use layerfs_projfs_probe::windows::{
+        use layerfs_native_probe::windows::{
             capture_child, capture_live, check, live, live_store, namespace_child, namespace_live,
             ProbeError,
         };

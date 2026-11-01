@@ -1,5 +1,5 @@
 //! Ordinary native I/O proof, with no SDK in the child read path.
-use layerfs_projfs_probe::store_fixture::{pattern, LARGE};
+use layerfs_native_probe::store_fixture::{pattern, LARGE};
 use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions},

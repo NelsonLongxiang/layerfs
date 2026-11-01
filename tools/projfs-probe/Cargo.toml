@@ -8,6 +8,10 @@ publish = false
 # Independent diagnostic; not a product workspace member or SDK implementation.
 [workspace]
 
+[lib]
+name = "layerfs_native_probe"
+crate-type = ["rlib", "cdylib"]
+
 [target.'cfg(windows)'.dependencies]
 # Existing first-party public ports; no alternate encoder or database driver.
 layerfs-content = { path = "../../core/crates/layerfs-content" }
@@ -17,4 +21,6 @@ layerfs-telemetry = { path = "../../core/crates/layerfs-telemetry" }
 layerfs-persistence = { path = "../../engine/crates/layerfs-persistence" }
 layerfs-project = { path = "../../engine/crates/layerfs-project" }
 layerfs-store-service = { path = "../../engine/crates/layerfs-store-service" }
+layerfs-overlay = { path = "../../engine/crates/layerfs-overlay" }
+layerfs-workspace = { path = "../../engine/crates/layerfs-workspace" }
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_ProjectedFileSystem", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_System_Memory", "Win32_System_IO", "Win32_Security"] }

@@ -1,4 +1,4 @@
-use layerfs_projfs_probe::{read_window, seed};
+use layerfs_native_probe::{read_window, seed};
 #[test]
 fn fixture_is_deterministic_and_nontrivial() {
     let bytes = seed();

@@ -5,6 +5,7 @@ mod capture_run;
 mod instance;
 mod mapped;
 mod namespace_run;
+mod overlay_ffi;
 mod store_run;
 pub use api::ProbeError;
 pub use capture_run::{capture_child, capture_live};

@@ -3,6 +3,8 @@
 mod fixture;
 pub use fixture::{read_window, seed, NAME};
 #[cfg(windows)]
+pub mod native_overlay;
+#[cfg(windows)]
 pub mod saved;
 #[cfg(windows)]
 mod source;

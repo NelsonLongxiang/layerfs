@@ -1,5 +1,5 @@
 #![cfg(windows)]
-use layerfs_projfs_probe::{
+use layerfs_native_probe::{
     saved::{validate_name, Saved},
     store_fixture::{branch, pattern, Fixture, BINDING, CURSOR, DEFERRED, LARGE},
 };
