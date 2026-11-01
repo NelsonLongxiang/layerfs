@@ -149,6 +149,16 @@ jobs:
           cargo +1.85.1 test --manifest-path Cargo.toml --locked --no-run
           -p layerfs-content -p layerfs-persistence -p layerfs-project
           -p layerfs-overlay -p layerfs-store-service
+      # The native route's SDK face: init/fork/write/apply/edit/publish against a
+      # temporary Store, and the daemon-backed family refusing Unsupported. It
+      # needs the addon this job just built, so it runs here; the host half skips
+      # without ROUTE_NATIVE_URL. Report-only, like every lane.
+      - name: Native route SDK face
+        shell: bash
+        run: |
+          cargo +1.85.1 build --manifest-path Cargo.toml --locked -p layerfs-node
+          cp target/debug/layerfs_node.dll engine/crates/layerfs-node/layerfs.node
+          timeout 110 node api/agent/test/route-native.mjs
       - name: Run windows store suites (each crate capped at 120 s)
         shell: bash
         run: |
