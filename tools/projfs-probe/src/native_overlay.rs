@@ -19,6 +19,25 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
+/// An explicit guarantee request, not an inferred state of the Windows cache.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommitScope {
+    Published,
+    ApplicationVisible,
+}
+impl TryFrom<u32> for CommitScope {
+    type Error = Error;
+    fn try_from(value: u32) -> Result<Self> {
+        match value {
+            1 => Ok(Self::Published),
+            2 => Ok(Self::ApplicationVisible),
+            _ => Err(refused(
+                0xc000000d,
+                "Commit scope must be explicit: 1=published, 2=application-visible",
+            )),
+        }
+    }
+}
 #[derive(Debug)]
 pub struct Error {
     pub status: i32,
@@ -724,6 +743,15 @@ impl Session {
         }
         Ok(read.data)
     }
+    /// Exact current published generation/revision for diagnostic boundary checks.
+    pub fn frontier(&self) -> Result<layerfs_overlay::WorkspaceState> {
+        self.bound
+            .operation()
+            .map_err(workspace_error)?
+            .overlay()
+            .state(self.bound.route())
+            .map_err(failed)
+    }
     pub fn observe(&self) -> Result<()> {
         let op = self.bound.operation().map_err(workspace_error)?;
         let state = op.overlay().state(self.bound.route()).map_err(failed)?;
@@ -747,8 +775,13 @@ impl Session {
         println!("DIAGNOSTIC_CAPTURE_RELEASED publication=false");
         Ok(())
     }
-    /// One real Workspace Commit. It calls the existing constructor/Save/History driver.
-    pub fn commit(&mut self) -> Result<bool> {
+    /// One published-frontier Commit, or a before-effect refusal of a stronger guarantee.
+    /// No section notification/fence is exposed by the installed native API: descriptor
+    /// counts and DisableCache cannot establish application-visible mapped-page capture.
+    pub fn commit(&mut self, scope: CommitScope) -> Result<bool> {
+        if scope == CommitScope::ApplicationVisible {
+            return Err(refused(0xc00000bb, "application-visible cache/section capture is not supported; explicitly request published-frontier semantics"));
+        }
         if self.capture.is_some() {
             return Err(refused(
                 0xc00000aa,
@@ -823,7 +856,7 @@ impl Session {
                             "independent history reopen differs from publication",
                         ));
                     }
-                    println!("OVERLAY_COMMIT kind=Committed id={:?} root={:?} parent={:?} via=Workspace saved_bytes={} open_handles={}", record.id, record.root, record.parent, success.saved.stored_bytes, self.handles.len());
+                    println!("OVERLAY_COMMIT kind=Committed scope=published id={:?} root={:?} parent={:?} via=Workspace saved_bytes={} open_handles={}", record.id, record.root, record.parent, success.saved.stored_bytes, self.handles.len());
                     self.commits.push(record.id);
                     true
                 }
@@ -832,7 +865,7 @@ impl Session {
                         return Err(failed("unexpected UpToDate identity"));
                     }
                     println!(
-                        "OVERLAY_COMMIT kind=UpToDate head={head:?} root={root:?} new_commit=false"
+                        "OVERLAY_COMMIT kind=UpToDate scope=published head={head:?} root={root:?} new_commit=false"
                     );
                     false
                 }

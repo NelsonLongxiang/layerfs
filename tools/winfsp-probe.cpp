@@ -45,7 +45,7 @@ struct Bridge {
   INT32(__cdecl *capture)() = nullptr;
   INT32(__cdecl *captured)(PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *release_capture)() = nullptr;
-  INT32(__cdecl *commit)(UINT32 *) = nullptr;
+  INT32(__cdecl *commit_scoped)(UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *committed)
   (UINT32, PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *published_byte)(PCWSTR, UINT32, UINT32 *) = nullptr;
@@ -430,7 +430,7 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, capture, lf_capture);
   LOAD(bridge, captured, lf_captured);
   LOAD(bridge, release_capture, lf_release_capture);
-  LOAD(bridge, commit, lf_commit);
+  LOAD(bridge, commit_scoped, lf_commit_scoped);
   LOAD(bridge, committed, lf_committed);
   LOAD(bridge, published_byte, lf_published_byte);
   LOAD(bridge, latest_byte, lf_latest_byte);
@@ -505,6 +505,24 @@ int wmain(int argc, wchar_t **argv) {
         swprintf_s(ack, L"cache-ack-%u", cache_phase);
         if (exists(argv[3], request)) {
           UINT32 published = 0, latest = 0, changed = 0;
+          // Explicitly test the stronger guarantee; failure must not write
+          // outputs or fall back to a published Commit. The following published
+          // operation is a separately requested observation, not a retry of
+          // this refusal.
+          UINT32 refused_changed = 0xa5a5a5a5u;
+          NTSTATUS rejected = bridge.commit_scoped(2, &refused_changed);
+          if (rejected != STATUS_NOT_SUPPORTED ||
+              refused_changed != 0xa5a5a5a5u)
+            break;
+          UINT32 invalid_changed = 0x5a5a5a5au;
+          NTSTATUS invalid = bridge.commit_scoped(0, &invalid_changed);
+          if (invalid != STATUS_INVALID_PARAMETER ||
+              invalid_changed != 0x5a5a5a5au)
+            break;
+          printf("COMMIT_SCOPE_REFUSED phase=%u requested=application-visible "
+                 "status=%08lx output_unchanged=true invalid_scope=%08lx\n",
+                 cache_phase, static_cast<ULONG>(rejected),
+                 static_cast<ULONG>(invalid));
           if (bridge.published_byte(L"\\cache.bin", 10, &published) < 0)
             break;
           if (cache_phase == 0) {
@@ -530,7 +548,7 @@ int wmain(int argc, wchar_t **argv) {
           if (cache_phase == 2 && bridge.release_capture() < 0)
             break;
           if (cache_phase >= 2) {
-            if (bridge.commit(&changed) < 0 ||
+            if (bridge.commit_scoped(1, &changed) < 0 ||
                 bridge.latest_byte(L"\\cache.bin", 10, &latest) < 0)
               break;
           }
@@ -573,8 +591,8 @@ int wmain(int argc, wchar_t **argv) {
       }
       if (checked && !committed1 && exists(argv[3], L"commit-one")) {
         UINT32 changed = 0;
-        if (bridge.release_capture() < 0 || bridge.commit(&changed) < 0 ||
-            changed != 1)
+        if (bridge.release_capture() < 0 ||
+            bridge.commit_scoped(1, &changed) < 0 || changed != 1)
           break;
         BYTE bytes[128]{};
         UINT32 count = 0;
@@ -597,7 +615,7 @@ int wmain(int argc, wchar_t **argv) {
             old_count != sizeof(before) - 1 || memcmp(old, before, old_count))
           break;
         UINT32 changed = 0;
-        if (bridge.commit(&changed) < 0 || changed != 1)
+        if (bridge.commit_scoped(1, &changed) < 0 || changed != 1)
           break;
         BYTE bytes[128]{};
         UINT32 count = 0;
@@ -615,7 +633,7 @@ int wmain(int argc, wchar_t **argv) {
       if ((committed2 || rebound) && !unchanged &&
           exists(argv[3], L"commit-unchanged")) {
         UINT32 changed = 1;
-        if (bridge.commit(&changed) < 0 || changed != 0)
+        if (bridge.commit_scoped(1, &changed) < 0 || changed != 0)
           break;
         unchanged = true;
         puts("NATIVE_COMMIT_UPTODATE_PASS new_commit=false");

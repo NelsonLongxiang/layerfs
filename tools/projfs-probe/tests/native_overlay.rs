@@ -2,7 +2,7 @@
 #[cfg(windows)]
 #[test]
 fn public_overlay_bridge_preserves_capture_and_open_custody() {
-    use layerfs_native_probe::native_overlay::Session;
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
     let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp")
         .canonicalize()
@@ -37,7 +37,10 @@ fn public_overlay_bridge_preserves_capture_and_open_custody() {
     assert!(s.create_file("/capture.txt").is_err());
     s.write(h, 0, b"before capture", false, false).unwrap();
     s.capture().unwrap();
-    assert_eq!(s.commit().unwrap_err().status as u32, 0xc00000aa);
+    assert_eq!(
+        s.commit(CommitScope::Published).unwrap_err().status as u32,
+        0xc00000aa
+    );
     s.write(h, 0, b"after!", false, false).unwrap();
     assert_eq!(s.captured_bytes("/capture.txt").unwrap(), b"before capture");
     assert_eq!(s.read(h, 0, 4096).unwrap(), b"after! capture");
@@ -58,7 +61,7 @@ fn public_overlay_bridge_preserves_capture_and_open_custody() {
 #[cfg(windows)]
 #[test]
 fn captured_commit_installs_and_keeps_open_descriptor_usable() {
-    use layerfs_native_probe::native_overlay::Session;
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
     let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp")
         .canonicalize()
@@ -78,7 +81,7 @@ fn captured_commit_installs_and_keeps_open_descriptor_usable() {
     );
     let (h, _) = s.create_file("/capture.txt").unwrap();
     s.write(h, 0, b"committed one", false, false).unwrap();
-    assert!(s.commit().unwrap());
+    assert!(s.commit(CommitScope::Published).unwrap());
     assert_eq!(
         s.committed_bytes(0, "/capture.txt").unwrap(),
         b"committed one"
@@ -90,12 +93,15 @@ fn captured_commit_installs_and_keeps_open_descriptor_usable() {
         s.committed_bytes(0, "/capture.txt").unwrap(),
         b"committed one"
     );
-    assert!(s.commit().unwrap());
+    assert!(s.commit(CommitScope::Published).unwrap());
     assert_eq!(
         s.committed_bytes(1, "/capture.txt").unwrap(),
         b"committed two"
     );
-    assert!(!s.commit().unwrap(), "unchanged frontier creates no Commit");
+    assert!(
+        !s.commit(CommitScope::Published).unwrap(),
+        "unchanged frontier creates no Commit"
+    );
     assert!(
         layerfs_native_probe::commit_reopen::verify(&root.join("store.sqlite")).is_err(),
         "two Commits with wrong exact fixture bytes must not pass"
@@ -120,7 +126,7 @@ fn captured_commit_installs_and_keeps_open_descriptor_usable() {
 #[cfg(windows)]
 #[test]
 fn nested_directory_moves_and_same_store_rebind_use_existing_ports() {
-    use layerfs_native_probe::native_overlay::Session;
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
     fn names(s: &Session, h: u64) -> Vec<String> {
         let mut result = Vec::new();
         let mut after = None;
@@ -172,7 +178,7 @@ fn nested_directory_moves_and_same_store_rebind_use_existing_ports() {
     let (dir, _) = s.open("/many", false).unwrap();
     assert_eq!(names(&s, dir).len(), 80);
     s.close_file(dir).unwrap();
-    assert!(s.commit().unwrap());
+    assert!(s.commit(CommitScope::Published).unwrap());
     s.finish().unwrap();
     drop(s);
     let work = root.join("rebound");
@@ -183,7 +189,7 @@ fn nested_directory_moves_and_same_store_rebind_use_existing_ports() {
     let (dir, _) = rebound.open("/archive/moved", false).unwrap();
     assert_eq!(names(&rebound, dir), ["a.txt"]);
     rebound.close_file(dir).unwrap();
-    assert!(!rebound.commit().unwrap());
+    assert!(!rebound.commit(CommitScope::Published).unwrap());
     rebound.finish().unwrap();
     println!("NESTED_REBIND_UNIT_PASS root={}", root.display());
 }
@@ -191,7 +197,7 @@ fn nested_directory_moves_and_same_store_rebind_use_existing_ports() {
 #[cfg(windows)]
 #[test]
 fn published_observer_and_constrained_stores_preserve_capture_and_eof() {
-    use layerfs_native_probe::native_overlay::Session;
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
     let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp")
         .canonicalize()
@@ -214,7 +220,7 @@ fn published_observer_and_constrained_stores_preserve_capture_and_eof() {
     assert_eq!(s.published_byte("/cache.bin").unwrap(), 66);
     assert_eq!(s.captured_bytes("/cache.bin").unwrap(), [65; 4096]);
     s.release_capture().unwrap();
-    assert!(s.commit().unwrap());
+    assert!(s.commit(CommitScope::Published).unwrap());
     assert_eq!(s.committed_bytes(0, "/cache.bin").unwrap()[0], 66);
     s.resize(h, 2).unwrap();
     s.write(h, 1, b"XYZ", false, true).unwrap();
@@ -227,4 +233,96 @@ fn published_observer_and_constrained_stores_preserve_capture_and_eof() {
     assert!(s.write(h, 0, b"stale", false, true).is_err());
     s.finish().unwrap();
     println!("CACHE_STORE_UNIT_PASS root={}", root.display());
+}
+
+#[cfg(windows)]
+#[test]
+fn unimplemented_commit_guarantees_refuse_before_capture_or_history_effect() {
+    use layerfs_history::HistoryCatalog;
+    use layerfs_native_probe::native_overlay::{CommitScope, Session};
+    use layerfs_native_probe::store_fixture::{branch, BINDING, CURSOR};
+    use layerfs_persistence::{Handles, PersistenceConfig, SqlitePersistenceProfile};
+    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tmp")
+        .canonicalize()
+        .unwrap();
+    let root = parent.join(format!(
+        "native-scope-unit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut s = Session::create(&root).unwrap();
+    let (h, _) = s.create_file("/scope.txt").unwrap();
+    s.write(h, 0, b"not yet committed", false, false).unwrap();
+    let catalog = Handles::open_read_only(
+        PersistenceConfig::sqlite(root.join("store.sqlite"))
+            .with_sqlite_profile(SqlitePersistenceProfile::Disposable),
+        BINDING,
+        CURSOR,
+    )
+    .unwrap();
+    for captured in [false, true] {
+        if captured {
+            s.capture().unwrap();
+        }
+        let frontier = s.frontier().unwrap();
+        let snapshot = catalog.history.branch_snapshot(branch()).unwrap();
+        assert_eq!(
+            s.commit(CommitScope::ApplicationVisible)
+                .unwrap_err()
+                .status as u32,
+            0xc00000bb
+        );
+        assert_eq!(
+            s.frontier().unwrap(),
+            frontier,
+            "refusal cannot capture, install or change revision"
+        );
+        assert_eq!(
+            catalog.history.branch_snapshot(branch()).unwrap(),
+            snapshot,
+            "refusal cannot publish History"
+        );
+        assert_eq!(s.read(h, 0, 100).unwrap(), b"not yet committed");
+        if captured {
+            assert_eq!(
+                s.captured_bytes("/scope.txt").unwrap(),
+                b"not yet committed"
+            );
+            s.release_capture().unwrap();
+        }
+    }
+    for code in [0, 3, u32::MAX] {
+        assert_eq!(
+            CommitScope::try_from(code).unwrap_err().status as u32,
+            0xc000000d
+        );
+    }
+    assert!(
+        s.commit(CommitScope::Published).unwrap(),
+        "existing published route remains available with open handle"
+    );
+    let frontier = s.frontier().unwrap();
+    let snapshot = catalog.history.branch_snapshot(branch()).unwrap();
+    assert_eq!(
+        s.commit(CommitScope::ApplicationVisible)
+            .unwrap_err()
+            .status as u32,
+        0xc00000bb
+    );
+    assert_eq!(s.frontier().unwrap(), frontier);
+    assert_eq!(catalog.history.branch_snapshot(branch()).unwrap(), snapshot);
+    assert!(!s.commit(CommitScope::Published).unwrap());
+    s.write(h, 0, b"later", false, false).unwrap();
+    assert!(s.commit(CommitScope::Published).unwrap());
+    s.close_file(h).unwrap();
+    drop(catalog);
+    s.finish().unwrap();
+    println!(
+        "COMMIT_SCOPE_UNIT_PASS refusal_before_effect=true published_route_kept=true root={}",
+        root.display()
+    );
 }

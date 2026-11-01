@@ -237,7 +237,8 @@ Commit. Its phase labels for application values are cross-checked against the
 ordinary client's actual read/view values. Observations retain all three values
 separately. The parser checks exact phases, captured content, known written byte
 ordering, actual same-handle Cleanup/Close ordering and Commit/frontier agreement;
-seven falsifying variants must reject. A separate read-only process verifies the
+ten falsifying variants must reject, including missing/refused guarantee checks.
+A separate read-only process verifies the
 History chain, all 4096-byte snapshots, exact unchanged tails and final byte.
 
 Current actual evidence shows a writable mapping can expose 67/68 to the application
@@ -258,3 +259,38 @@ Keep this limitation in any product-readiness claim. Do not silently add a block
 flush while holding the bridge mutex, infer dirty-view absence from descriptor
 counts, or declare an arbitrary delay a drain. Mapping admission/coherence and
 concurrent capture/reply semantics remain separate engineering work.
+
+## Explicit Commit guarantee admission
+
+There is no default diagnostic Commit guarantee. Session::commit takes CommitScope;
+the C ABI is lf_commit_scoped(scope, changed), replacing the old unscoped symbol.
+This is an internal diagnostic ABI change, not a product SDK contract change.
+
+- scope=1 / Published runs the existing captured Commit over the locally published
+  Overlay frontier. Both Committed and UpToDate explicitly report scope=published.
+  Open file handles remain permitted; this is not a new all-handles-closed gate.
+- scope=2 / ApplicationVisible requests all application-visible cache/mapping bytes.
+  It returns STATUS_NOT_SUPPORTED (0xc00000bb) before capture, Save or History,
+  even when no current handle happens to be visible. No fallback or implicit flush.
+- 0 and unknown codes return STATUS_INVALID_PARAMETER (0xc000000d). Rejected calls
+  leave the caller's output sentinel untouched. A later explicit Published request
+  is a different guarantee, not replay of the refused operation.
+
+The cache experiment requests/refuses the stronger guarantee at all eight real
+lifetime phases, then explicitly requests the existing published-frontier behavior.
+Direct Rust tests compare the exact Overlay generation/revision/capture state and
+History snapshot before/after refusal, before/after publication and while a separate
+capture exists. No guess about dirty sections is derived from descriptor counts.
+
+Pinned WinFsp v2.2B5 source explains why changing DisableCache is not a mapping gate:
+create.c assigns SectionObjectPointer independently of FO_CACHE_SUPPORTED, and only
+sets FO_CACHE_SUPPORTED for FileInfoTimeout=INFINITE plus allowed per-open caching.
+Our FileInfoTimeout=0 already takes the noncached ordinary I/O route. The native
+section callbacks in callbacks.c synchronize kernel resources without a user-mode
+per-section admission callback. A share-denying open can detect writable sections
+for that one file; it is not a recursive namespace snapshot or a complete capture
+boundary. This is not a claim that no Windows mechanism could ever solve the gap.
+
+The implementation rejects an unimplemented stronger guarantee. It does not prevent
+mapped stores, synchronize dirty mappings, improve crash recovery or qualify the
+product Workspace. Revisit those capabilities only with their own executable proof.

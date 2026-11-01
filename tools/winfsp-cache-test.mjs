@@ -9,6 +9,10 @@ function analyze(provider,application){
  assert.match(provider,/errors=0/);assert.match(provider,/OVERLAY_STATE .*handles=0/);
  const phases=[...provider.matchAll(/CACHE_PHASE phase=(\d+) application=(\d+) published_before=(\d+) published_after=(\d+) committed=(\d+) commit_changed=(\d+) writes=(\d+) constrained=(\d+) cleanup=(\d+) close=(\d+)/g)].map(m=>Object.fromEntries(['phase','application','published_before','published_after','committed','commit_changed','writes','constrained','cleanup','close'].map((k,i)=>[k,Number(m[i+1])])));
  const clientPhases=[...application.matchAll(/CACHE_CLIENT phase=(\d+) visible=(\d+) explicit_flush=false/g)].map(m=>[Number(m[1]),Number(m[2])]);
+ const scoped=[...provider.matchAll(/COMMIT_SCOPE_REFUSED phase=(\d+) requested=application-visible status=c00000bb output_unchanged=true invalid_scope=c000000d/g)].map(m=>Number(m[1]));
+ assert.deepEqual(scoped,[0,1,2,3,4,5,6,7],'every live phase must refuse unproved/invalid guarantees before a published Commit');
+ const commitLines=provider.split(/\r?\n/).filter(l=>l.startsWith('OVERLAY_COMMIT kind='));
+ assert.ok(commitLines.length>0);for(const line of commitLines)assert.match(line,/scope=published /);
  const expected=[65,66,66,67,67,68,68,68];
  assert.deepEqual(phases.map(p=>p.phase),[0,1,2,3,4,5,6,7]);
  assert.deepEqual(clientPhases,expected.map((v,i)=>[i,v]));
@@ -38,6 +42,9 @@ if(process.argv[2]==='--self-test'){
  const raw=JSON.parse(readFileSync(resolve(process.argv[3]),'utf8'));const p=raw.provider.stdout,a=raw.application.stdout;
  analyze(p,a);console.log('PASS analyze actual cache receipt');
  const tests=[
+  ['missing scope refusal',p.replace(/^COMMIT_SCOPE_REFUSED phase=3 .*\r?\n/m,''),a],
+  ['downgraded guarantee accepted',p.replace('requested=application-visible status=c00000bb','requested=application-visible status=00000000'),a],
+  ['implicit published result',p.replace('OVERLAY_COMMIT kind=Committed scope=published ','OVERLAY_COMMIT kind=Committed '),a],
   ['missing phase',p.replace(/^CACHE_PHASE phase=4 .*\r?\n/m,''),a],
   ['future byte',p.replace('phase=3 application=67 published_before=','phase=3 application=67 published_before=99'),a],
   ['lost final Commit',p.replace(/(CACHE_PHASE phase=7 .*committed=)\d+/,(_m,prefix)=>prefix+'65'),a],

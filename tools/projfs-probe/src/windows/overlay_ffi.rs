@@ -1,5 +1,5 @@
 //! Narrow C ABI for the diagnostic native host. Unsafe never leaves windows/.
-use crate::native_overlay::{failed, Error, Session, Stat};
+use crate::native_overlay::{failed, CommitScope, Error, Session, Stat};
 use std::{
     panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
@@ -295,12 +295,12 @@ pub extern "C" fn lf_release_capture() -> i32 {
     call(|s| s.release_capture())
 }
 #[no_mangle]
-pub unsafe extern "C" fn lf_commit(changed: *mut u32) -> i32 {
+pub unsafe extern "C" fn lf_commit_scoped(scope: u32, changed: *mut u32) -> i32 {
     call(|s| {
         if changed.is_null() {
             return Err(failed("null commit output"));
         }
-        let value = s.commit()?;
+        let value = s.commit(CommitScope::try_from(scope)?)?;
         unsafe { put(changed, u32::from(value)) }
     })
 }

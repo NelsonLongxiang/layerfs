@@ -76,6 +76,7 @@ try{
  for(const pattern of [/OVERLAY_BOUND .*source=real_Store/,/NATIVE_OVERLAY_READY/,/OVERLAY_CAPTURE_STABLE old_bytes=true later_mutation=true/,/NATIVE_COMMIT_ONE_PASS reopened_history=true via=Workspace/,/NATIVE_COMMIT_TWO_PASS earlier_snapshot_stable=true later_write_published=true/,/NATIVE_COMMIT_UPTODATE_PASS new_commit=false/,/OVERLAY_CLOSED real_overlay=true commits=2/,/NOT_RUN product_Workspace concurrent_commit mapped_lifecycle full_repository/])assert.match(stdout,pattern);
  const counts=/CALLBACKS create=(\d+) open=(\d+) read=(\d+) write=(\d+) rename=(\d+) cleanup=(\d+) close=(\d+) delete=(\d+) errors=0/.exec(stdout);
  assert.ok(counts,stdout);assert.ok(counts.slice(1).every(n=>Number(n)>0));assert.match(stdout,/OVERLAY_STATE .*handles=0/);
+ for(const line of stdout.split(/\r?\n/).filter(l=>l.startsWith("OVERLAY_COMMIT kind=")))assert.match(line,/scope=published /);
  assert.equal(sha(exe),binary);assert.equal(sha(dll),library);assert.equal(sha(bridge),rust);assert.equal(sha(checker),checkerHash);assert.equal(existsSync(mount),false);
  console.log('PASS native Windows -> Rust Overlay: nested mkdir/read/write/list/cross-directory rename/rmdir, two Commits, held descriptors and independent reopen');
 }catch(e){failure=String(e);if(held!==undefined){try{closeSync(held);}catch{}}if(child.exitCode===null&&!child.killed)child.kill();await ended;throw e;}
@@ -104,7 +105,7 @@ try{
  assert.equal(result.code,0,out2+err2);assert.equal(result.signal,null);
  assert.match(out2,/STORE_REBOUND existing=true init=false/);assert.match(out2,/NATIVE_REBOUND_READY existing_store=true init=false/);
  assert.doesNotMatch(out2,/STORE_CREATED|OVERLAY_COMMIT kind=Committed/);
- assert.match(out2,/OVERLAY_COMMIT kind=UpToDate/);assert.match(out2,/OVERLAY_CLOSED real_overlay=true commits=0/);
+ assert.match(out2,/OVERLAY_COMMIT kind=UpToDate scope=published /);assert.match(out2,/OVERLAY_CLOSED real_overlay=true commits=0/);
  assert.equal(existsSync(mount2),false);assert.equal(sha(exe),binary);assert.equal(sha(bridge),rust);assert.equal(sha(dll),library);assert.equal(sha(checker),checkerHash);
  const reopened=spawnSync(checker,['verify-commits',store],{encoding:'utf8',timeout:20000});
  writeFileSync(join(second,'reopen-after.json'),JSON.stringify({exit:reopened.status,stdout:reopened.stdout,stderr:reopened.stderr},null,2));
