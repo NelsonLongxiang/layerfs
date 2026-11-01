@@ -499,3 +499,30 @@ been traced inside the kernel; the cause remains narrower than a general driver
 leak claim. Ordinary cached access, notifications and irreversible STOP are not
 promoted to reliable drain/fence mechanisms by this evidence. The original Git
 qualification stays FAIL; [lifetime report](../../core/docs/issues/352/WINFSP-READONLY-LIFETIME-2026-11-02.md).
+
+## Ordinary readonly reopen: observed Close coordination
+
+A further isolated test keeps the File-first readonly view alive while normal stop
+returns Busy, then reads the same file through a second ordinary handle. Both that
+read and the original view remain valid; the original token still has no Close.
+The view owner then unmaps and exits. No original Close arrives during the unchanged
+ten-second readiness observation. One new readonly open/read/close on that exact
+file is followed by the real Close callback for the original token; only then does
+a distinct normal-stop request prepare, drain and detach. No backend or host
+lifecycle code changes for this experiment.
+
+```powershell
+node tools/winfsp-reopen-test.mjs <native-host> <installed-WinFsp-dll> <Rust-dll> <client-exe> <fresh-output>
+node tools/winfsp-reopen-test.mjs --self-test <fresh-output>/result.json
+```
+
+This is a measured single-file sequence, not a universal kernel fence. The test
+knows the exact unchanged filename, original token, and when its own view is
+released; rename/unlink, writable mappings, foreign owners and concurrent namespace
+changes remain outside the evidence. The adapter cannot infer the owner's Unmap
+from Cleanup or turn a path reopen into permission to discard original custody.
+The installed FlushAndPurgeOnCleanup setting may perform its existing kernel cleanup
+work; the caller issues no explicit flush, notification or forced Unmap. No automatic
+reopen sweep is installed in normal close. General-close qualification stays false,
+and the original Git full-lifecycle FAIL remains until independently fixed and rerun.
+See the [reopen coordination result](../../core/docs/issues/352/WINFSP-READONLY-REOPEN-2026-11-02.md).
