@@ -75,7 +75,8 @@ fn main() {
             return;
         }
         use layerfs_projfs_probe::windows::{
-            capture_child, capture_live, check, live, live_store, ProbeError,
+            capture_child, capture_live, check, live, live_store, namespace_child, namespace_live,
+            ProbeError,
         };
         let result = if args.len() == 1 && args[0] == "check" {
             check()
@@ -87,8 +88,12 @@ fn main() {
             capture_live(Path::new(&args[1]))
         } else if args.len() == 2 && args[0] == "capture-child" {
             capture_child(Path::new(&args[1]))
+        } else if args.len() == 2 && args[0] == "namespace-live" {
+            namespace_live(Path::new(&args[1]))
+        } else if args.len() == 2 && args[0] == "namespace-child" {
+            namespace_child(Path::new(&args[1]))
         } else {
-            eprintln!("usage: layerfs-projfs-probe check | live <new-absolute-root> | store-live <new-absolute-root> | capture-live <new-absolute-root>");
+            eprintln!("usage: layerfs-projfs-probe check | live <new-absolute-root> | store-live <new-absolute-root> | capture-live <new-absolute-root> | namespace-live <new-absolute-root>");
             std::process::exit(1);
         };
         if let Err(error) = result {

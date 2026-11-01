@@ -2,7 +2,7 @@
 
 > Status: Experimental diagnostic; not a product contract or Workspace implementation.
 
-Three bounded experiments share the same ProjFS callbacks. `live` serves a 96 KiB
+Four bounded experiments share the same ProjFS callbacks. `live` serves a 96 KiB
 fixed sample and exercises local mutations. `store-live` creates a new Disposable
 LayerFS Store, pins one published root, and reads directory metadata and binary
 ranges through public Persistence/Storage/Content ports. It then advances the
@@ -131,3 +131,21 @@ repository semantics. **Do not pass permissively opened or post-stop mutable
 NTFS files as captured input to Save.** A sharing refusal remains a refusal, not
 an automatic wait/retry or a reason to switch to the permissive counterexample.
 Workspace capture/Commit remain Unsupported and W2/W3/W4 are not promoted.
+
+## Namespace guard boundary
+
+The separate namespace-live mode retains a read + FILE_SHARE_READ directory
+handle and one protected file handle, then launches an ordinary process. The
+protected file write and a root-level rename refuse Win32 32. Creating a
+subdirectory/file, writing another file, deleting another file and renaming a
+nested file still succeed. A directory handle is not a recursive snapshot.
+
+```powershell
+node tools/projfs-probe/tests/namespace-smoke.mjs <probe-exe> <fresh-output-directory>
+```
+
+The first diagnostic expected the root rename to succeed and failed; its root
+and output are retained. The corrected test asserts the exact observed operations,
+not a universal claim about every rename path or Windows version. It does not
+implement multi-file capture, mutation generations or Commit. See the
+[native request-path result and next step](../../core/docs/issues/352/WINDOWS-NATIVE-REQUEST-PATH-2026-11-01.md).
