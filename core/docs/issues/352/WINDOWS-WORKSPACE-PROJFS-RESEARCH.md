@@ -2,6 +2,10 @@
 
 > **Status:** Research; informative and not a product contract.
 > Checked 2026-11-01, Asia/Shanghai. Baselines: LayerFS `36a175bf9`, plugin `3fb523e`.
+> Follow-up at 19:24: ProjFS became available. An isolated fixed-content
+> [live projection probe passed](PROJFS-PROBE-2026-11-01.md); the earlier
+> missing-component observations below remain historical, not current state.
+> Store-to-Overlay capture and Workspace Commit remain unproved.
 
 ## Verified state
 

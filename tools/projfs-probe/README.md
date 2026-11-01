@@ -50,3 +50,5 @@ rustfmt because the 1.85.1 rustfmt component was absent. No toolchain was instal
 The initial overflow test accidentally addressed exact EOF (a legitimate no-op);
 it now tests an overflowing length from inside the range and separately asserts EOF.
 The original failure is retained in the issue-352 test receipts.
+
+Live result and exact limits: [2026-11-01 probe record](../../core/docs/issues/352/PROJFS-PROBE-2026-11-01.md).

@@ -1,0 +1,37 @@
+{
+  "tree_spec_id": "ts_layerfs_native_projfs_enabled_20261101",
+  "tree_spec_version": 1,
+  "title": "LayerFS native readiness with ProjFS API available",
+  "root": "native-delivery",
+  "target": {
+    "kind": "sqlite-snapshot",
+    "id": "snapshot.sqlite",
+    "sha256": "sha256:aa7b7c7f8edf80025659651c317ffa7438081aa21802a1d95610742765bac72b"
+  },
+  "subject": {
+    "repo": "NelsonLongxiang/layerfs",
+    "commit": "194f3a6b6059aeec7705f3c22c7415b7ff9eaa9f"
+  },
+  "engine_version": "0.118.0",
+  "nodes": [
+    {
+      "id": "store-evidence",
+      "kind": "leaf",
+      "spec_id": "spec_9c8f3b98db86"
+    },
+    {
+      "id": "workspace-ready",
+      "kind": "leaf",
+      "spec_id": "spec_04bcdb7fdf40"
+    },
+    {
+      "id": "native-delivery",
+      "kind": "agg",
+      "op": "all_pass",
+      "children": [
+        "store-evidence",
+        "workspace-ready"
+      ]
+    }
+  ]
+}
