@@ -62,6 +62,8 @@ Live result and exact limits: [2026-11-01 probe record](../../core/docs/issues/3
 
 ## Real Store read projection
 
+Fixed-source live proof: [Store read result](../../core/docs/issues/352/PROJFS-STORE-READ-2026-11-01.md).
+
 ```powershell
 tmp/projfs-probe-target/debug/layerfs-projfs-probe.exe store-live D:/workspace/layerfs/tmp/store-projection-<unique>
 node tools/projfs-probe/tests/store-smoke.mjs tmp/projfs-probe-target/debug/layerfs-projfs-probe.exe tmp/store-proof-<unique>

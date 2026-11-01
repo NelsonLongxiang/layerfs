@@ -53,6 +53,8 @@ Repeat submit/prepare/run for `workspace.md`, `workspace-candidates.json`, and `
 
 ## Local results
 
+The [real Store read-only ProjFS proof](../../../core/docs/issues/352/PROJFS-STORE-READ-2026-11-01.md) is a separate diagnostic milestone. It is not the Workspace read/write/capture proof required by the frozen W2/W3/W4 criteria; do not promote those rows from NOT_RUN using the read-only result.
+
 Run IDs and archive paths are in [the issue-352 result](../../../core/docs/issues/352/NATIVE-VERIFIER-2026-11-01.md). Outputs and databases belong under task-specific tmp directories, not in this package. No schedule is installed.
 
 ```powershell
