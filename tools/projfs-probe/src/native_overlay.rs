@@ -58,16 +58,22 @@ fn workspace_error(e: WorkspaceError) -> Error {
     }
 }
 fn mutation_error(e: layerfs_store_service::write::mutation::Result<()>) -> Result<()> {
-    e.map_err(|e| Error {
-        status: match e.code.as_str() {
+    e.map_err(|e| coded(&e.code, e.message))
+}
+fn coded(code: &str, message: String) -> Error {
+    Error {
+        status: match code {
             "NoSuchPath" => 0xc0000034u32,
             "Exists" => 0xc0000035,
             "NotDirectory" => 0xc0000103,
             "NotEmpty" => 0xc0000101,
+            "InvalidInput" => 0xc000000d,
+            "IsDirectory" => 0xc00000ba,
+            "NotFile" => 0xc00000bb,
             _ => 0xc0000001,
         } as i32,
-        detail: format!("{}: {}", e.code, e.message),
-    })
+        detail: format!("{code}: {message}"),
+    }
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -118,8 +124,24 @@ pub struct Session {
 impl Session {
     pub fn create(path: &Path) -> Result<Self> {
         let fixture = Fixture::create(path).map_err(failed)?;
+        Self::bind_store(fixture.store, path)
+    }
+    /// New local owner over the exact existing Store: no fixture import or Init.
+    pub fn reopen(store: &Path, work: &Path) -> Result<Self> {
+        if !store.is_absolute() || !work.is_absolute() || !store.is_file() {
+            return Err(refused(
+                0xc000000d,
+                "existing absolute Store and fresh absolute work path required",
+            ));
+        }
+        std::fs::create_dir(work).map_err(failed)?;
+        layerfs_store_service::windows_acl::restrict_to_owner(work).map_err(failed)?;
+        println!("STORE_REBOUND existing=true init=false");
+        Self::bind_store(store.to_path_buf(), work)
+    }
+    fn bind_store(store_path: PathBuf, path: &Path) -> Result<Self> {
         let service = StoreService::open_direct(
-            &fixture.store,
+            &store_path,
             BINDING,
             CURSOR,
             &path.join("native-template.sqlite"),
@@ -153,7 +175,7 @@ impl Session {
             handles: BTreeMap::new(),
             capture: None,
             publications: 0,
-            store_path: fixture.store,
+            store_path,
             commits: Vec::new(),
             retained_commit: None,
             retained_success: None,
@@ -189,14 +211,9 @@ impl Session {
     pub fn stat_path(&self, path: &str) -> Result<Stat> {
         validate(path)?;
         self.with(|m| {
-            m.resolve(path).map(Stat::from).map_err(|e| Error {
-                status: if e.code == "NoSuchPath" {
-                    0xc0000034u32 as i32
-                } else {
-                    0xc0000001u32 as i32
-                },
-                detail: e.message,
-            })
+            m.resolve(path)
+                .map(Stat::from)
+                .map_err(|e| coded(&e.code, e.message))
         })
     }
     pub fn stat_handle(&self, handle: u64) -> Result<Stat> {
@@ -212,11 +229,38 @@ impl Session {
         })
     }
     fn reference(&self, path: &str) -> Result<Inode> {
-        let name = PathName::new(
-            path.strip_prefix('/')
-                .ok_or_else(|| failed("absolute name"))?,
-        )
-        .map_err(failed)?;
+        let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
+        let op = self.bound.operation().map_err(workspace_error)?;
+        let mut parent = self.root;
+        let mut held_parent = false;
+        for (index, part) in parts.iter().enumerate() {
+            let result = self.reference_child(parent, PathName::new(part).map_err(failed)?);
+            // Unknown owner outcomes retain every possibly acquired reference.
+            if held_parent
+                && !result
+                    .as_ref()
+                    .is_err_and(|e| e.status == 0xc0000001u32 as i32)
+            {
+                op.overlay()
+                    .kernel_forget(self.bound.route(), self.mount, parent, 1)
+                    .map_err(failed)?;
+            }
+            let row = result?;
+            if index + 1 == parts.len() {
+                return Ok(row);
+            }
+            if row.kind != layerfs_overlay::InodeKind::Directory {
+                op.overlay()
+                    .kernel_forget(self.bound.route(), self.mount, row.serial, 1)
+                    .map_err(failed)?;
+                return Err(refused(0xc0000103, "intermediate entry is not a directory"));
+            }
+            parent = row.serial;
+            held_parent = true;
+        }
+        Err(refused(0xc000000d, "root needs no lookup"))
+    }
+    fn reference_child(&self, parent: u64, name: PathName) -> Result<Inode> {
         let op = self.bound.operation().map_err(workspace_error)?;
         let mut facts = VisitFacts::default();
         loop {
@@ -225,10 +269,10 @@ impl Session {
                 .kernel_read_visit(
                     op.resident(),
                     self.mount,
-                    self.root,
+                    parent,
                     None,
                     KernelReadOperation::Lookup {
-                        parent: self.root,
+                        parent,
                         name: name.clone(),
                     },
                     Arc::new(facts.clone()),
@@ -330,21 +374,35 @@ impl Session {
         Ok((request, stat))
     }
     pub fn create_file(&mut self, path: &str) -> Result<(u64, Stat)> {
+        self.create_entry(path, false)
+    }
+    pub fn create_directory(&mut self, path: &str) -> Result<(u64, Stat)> {
+        self.create_entry(path, true)
+    }
+    fn create_entry(&mut self, path: &str, directory: bool) -> Result<(u64, Stat)> {
         validate(path)?;
-        let name = PathName::new(path.trim_start_matches('/')).map_err(failed)?;
-        let root = self.root;
+        if path == "/" {
+            return Err(refused(0xc0000035, "root exists"));
+        }
         self.with(|m| {
-            mutation_error(
-                m.apply(Operation::Create {
-                    parent: root,
+            let (parent, name) = m.parent(path).map_err(|e| coded(&e.code, e.message))?;
+            let operation = if directory {
+                Operation::Mkdir {
+                    parent,
+                    name,
+                    mode: 0o700,
+                }
+            } else {
+                Operation::Create {
+                    parent,
                     name,
                     mode: 0o600,
-                })
-                .map(|_| ()),
-            )
+                }
+            };
+            mutation_error(m.apply(operation).map(|_| ()))
         })?;
         self.publications += 1;
-        self.open(path, true)
+        self.open(path, !directory)
     }
     pub fn read(&self, handle: u64, offset: u64, length: u32) -> Result<Vec<u8>> {
         let held = self
@@ -446,16 +504,30 @@ impl Session {
     pub fn rename(&mut self, from: &str, to: &str, replace: bool) -> Result<()> {
         validate(from)?;
         validate(to)?;
-        let root = self.root;
+        if from == "/" || to == "/" {
+            return Err(refused(0xc0000022, "cannot rename root"));
+        }
         self.with(|m| {
+            let (parent, name) = m.parent(from).map_err(|e| coded(&e.code, e.message))?;
+            let (new_parent, new_name) = m.parent(to).map_err(|e| coded(&e.code, e.message))?;
+            let destination = to
+                .rsplit_once('/')
+                .ok_or_else(|| failed("destination parent"))?
+                .0;
+            let destination_path = destination
+                .split('/')
+                .filter(|p| !p.is_empty())
+                .map(PathName::new)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(failed)?;
             mutation_error(
                 m.apply(Operation::Rename {
-                    parent: root,
-                    name: PathName::new(from.trim_start_matches('/')).map_err(failed)?,
-                    new_parent: root,
-                    new_name: PathName::new(to.trim_start_matches('/')).map_err(failed)?,
+                    parent,
+                    name,
+                    new_parent,
+                    new_name,
                     replace,
-                    destination_path: None,
+                    destination_path: Some(destination_path),
                 })
                 .map(|_| ()),
             )
@@ -463,17 +535,50 @@ impl Session {
         self.publications += 1;
         Ok(())
     }
+    pub fn can_delete(&self, path: &str) -> Result<()> {
+        validate(path)?;
+        if path == "/" {
+            return Err(refused(0xc0000022, "cannot delete root"));
+        }
+        self.with(|m| {
+            let stat = m.resolve(path).map_err(|e| coded(&e.code, e.message))?;
+            if stat.kind == layerfs_content::object::inode_leaf::InodeKind::Directory {
+                let mut after = None;
+                loop {
+                    let page = m
+                        .view
+                        .list(m.op.overlay(), stat.serial, after.as_deref())
+                        .map_err(workspace_error)?;
+                    if !page.entries.is_empty() {
+                        return Err(refused(0xc0000101, "directory not empty"));
+                    }
+                    match page.continuation {
+                        Some(next) if after.as_ref().is_none_or(|old| *old < next) => {
+                            after = Some(next)
+                        }
+                        Some(_) => return Err(failed("delete-check cursor did not advance")),
+                        None => break,
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
     pub fn unlink(&mut self, path: &str) -> Result<()> {
         validate(path)?;
-        let root = self.root;
+        if path == "/" {
+            return Err(refused(0xc0000022, "cannot delete root"));
+        }
         self.with(|m| {
-            mutation_error(
-                m.apply(Operation::Unlink {
-                    parent: root,
-                    name: PathName::new(path.trim_start_matches('/')).map_err(failed)?,
-                })
-                .map(|_| ()),
-            )
+            let stat = m.resolve(path).map_err(|e| coded(&e.code, e.message))?;
+            let (parent, name) = m.parent(path).map_err(|e| coded(&e.code, e.message))?;
+            let operation =
+                if stat.kind == layerfs_content::object::inode_leaf::InodeKind::Directory {
+                    Operation::Rmdir { parent, name }
+                } else {
+                    Operation::Unlink { parent, name }
+                };
+            mutation_error(m.apply(operation).map(|_| ()))
         })?;
         self.publications += 1;
         Ok(())
@@ -502,13 +607,21 @@ impl Session {
         self.handles.remove(&handle);
         Ok(())
     }
-    pub fn list_next(&self, after: Option<&[u8]>) -> Result<Option<(Vec<u8>, Stat)>> {
+    pub fn list_next(&self, handle: u64, after: Option<&[u8]>) -> Result<Option<(Vec<u8>, Stat)>> {
+        let held = self
+            .handles
+            .get(&handle)
+            .ok_or_else(|| refused(0xc0000008, "stale directory handle"))?;
+        if held.directory.is_none() {
+            return Err(refused(0xc0000103, "not a directory handle"));
+        }
+        let parent = held.serial;
         let mut cursor = after.map(Vec::from);
         loop {
             let (entry, continuation) = self.with(|m| {
                 let page = m
                     .view
-                    .list(m.op.overlay(), self.root, cursor.as_deref())
+                    .list(m.op.overlay(), parent, cursor.as_deref())
                     .map_err(workspace_error)?;
                 let first = page
                     .entries
@@ -553,6 +666,14 @@ impl Session {
     }
     pub fn captured_bytes(&self, path: &str) -> Result<Vec<u8>> {
         validate(path)?;
+        // This small control read checks one newly created root file only; real
+        // nested Commit construction is handled by CapturedNamespace, not here.
+        if path == "/" || path.trim_start_matches('/').contains('/') {
+            return Err(refused(
+                0xc00000bb,
+                "diagnostic captured read admits a new root file only",
+            ));
+        }
         let (_, reader) = self.capture.ok_or_else(|| failed("no capture"))?;
         let op = self.bound.operation().map_err(workspace_error)?;
         let entry = op
@@ -787,14 +908,14 @@ fn validate(path: &str) -> Result<()> {
     if path == "/" {
         return Ok(());
     }
-    let name = path
+    let rest = path
         .strip_prefix('/')
         .ok_or_else(|| refused(0xc000000d, "absolute path required"))?;
-    if name.contains('/') || name.is_empty() {
-        return Err(refused(
-            0xc00000bb,
-            "diagnostic currently serves root entries only",
-        ));
+    if rest.is_empty() {
+        return Err(refused(0xc000000d, "empty path"));
     }
-    crate::saved::validate_name(name).map_err(|e| refused(0xc000000d, &e))
+    for name in rest.split('/') {
+        crate::saved::validate_name(name).map_err(|e| refused(0xc000000d, &e))?;
+    }
+    Ok(())
 }

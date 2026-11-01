@@ -27,6 +27,7 @@ static_assert(sizeof(Stat) == 40, "Rust ABI Stat size");
 struct Bridge {
   HMODULE dll = nullptr;
   INT32(__cdecl *start)(PCWSTR, UINT32) = nullptr;
+  INT32(__cdecl *reopen)(PCWSTR, UINT32, PCWSTR, UINT32) = nullptr;
   INT32(__cdecl *stat)(PCWSTR, UINT32, Stat *) = nullptr;
   INT32(__cdecl *open)
   (PCWSTR, UINT32, UINT32, UINT32, UINT64 *, Stat *) = nullptr;
@@ -36,10 +37,11 @@ struct Bridge {
   (UINT64, UINT64, PVOID, UINT32, UINT32, Stat *) = nullptr;
   INT32(__cdecl *resize)(UINT64, UINT64, Stat *) = nullptr;
   INT32(__cdecl *rename)(PCWSTR, UINT32, PCWSTR, UINT32, UINT32) = nullptr;
+  INT32(__cdecl *can_delete)(PCWSTR, UINT32) = nullptr;
   INT32(__cdecl *unlink)(PCWSTR, UINT32) = nullptr;
   INT32(__cdecl *close)(UINT64) = nullptr;
   INT32(__cdecl *next)
-  (PCWSTR, UINT32, PWSTR, UINT32, UINT32 *, Stat *) = nullptr;
+  (UINT64, PCWSTR, UINT32, PWSTR, UINT32, UINT32 *, Stat *) = nullptr;
   INT32(__cdecl *capture)() = nullptr;
   INT32(__cdecl *captured)(PCWSTR, UINT32, PVOID, UINT32, UINT32 *) = nullptr;
   INT32(__cdecl *release_capture)() = nullptr;
@@ -52,7 +54,6 @@ struct Bridge {
 static PSECURITY_DESCRIPTOR security = nullptr;
 static volatile LONG creates = 0, opens = 0, reads = 0, writes = 0, renames = 0,
                      cleanups = 0, closes = 0, deletes = 0, callback_error = 0;
-static UINT64 root_serial = 0;
 static UINT32 length(PCWSTR text) {
   return text ? static_cast<UINT32>(wcslen(text)) : 0;
 }
@@ -135,11 +136,13 @@ static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
                             UINT32, UINT32, PSECURITY_DESCRIPTOR,
                             UINT64 allocation, PVOID *ctx,
                             FSP_FSCTL_FILE_INFO *info) {
-  if (options & FILE_DIRECTORY_FILE || allocation)
+  if (allocation)
     return STATUS_NOT_SUPPORTED;
   Stat stat{};
   UINT64 held = 0;
-  auto status = bridge.open(name, length(name), 1, 1, &held, &stat);
+  auto status =
+      bridge.open(name, length(name), (options & FILE_DIRECTORY_FILE) ? 2u : 1u,
+                  1, &held, &stat);
   if (status < 0)
     return status;
   auto full = reinterpret_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx);
@@ -259,12 +262,8 @@ static NTSTATUS size_file(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT64 size,
     fill(stat, info);
   return status;
 }
-static NTSTATUS can_delete(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR) {
-  Stat stat{};
-  auto status = bridge.info(handle(ctx), &stat);
-  return status < 0       ? status
-         : stat.directory ? STATUS_NOT_SUPPORTED
-                          : STATUS_SUCCESS;
+static NTSTATUS can_delete(FSP_FILE_SYSTEM *, PVOID, PWSTR name) {
+  return bridge.can_delete(name, length(name));
 }
 static NTSTATUS rename_file(FSP_FILE_SYSTEM *, PVOID, PWSTR from, PWSTR to,
                             BOOLEAN replace) {
@@ -276,9 +275,6 @@ static NTSTATUS rename_file(FSP_FILE_SYSTEM *, PVOID, PWSTR from, PWSTR to,
 static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
                           PVOID buffer, ULONG capacity, PULONG count) {
   *count = 0;
-  if (static_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx)->UserContext !=
-      root_serial)
-    return STATUS_NOT_SUPPORTED;
   WCHAR after[256]{};
   if (marker) {
     if (length(marker) > 255)
@@ -289,7 +285,8 @@ static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
     WCHAR name[256]{};
     UINT32 len = 0;
     Stat stat{};
-    auto status = bridge.next(after, length(after), name, 255, &len, &stat);
+    auto status =
+        bridge.next(handle(ctx), after, length(after), name, 255, &len, &stat);
     if (status < 0)
       return status;
     if (!len) {
@@ -359,9 +356,9 @@ static bool exists(PCWSTR root, PCWSTR phase) {
 int wmain(int argc, wchar_t **argv) {
   puts("WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos");
   puts("https://github.com/winfsp/winfsp - diagnostic Rust Overlay bridge");
-  if (argc != 5) {
+  if (argc != 5 && argc != 6) {
     fwprintf(stderr, L"usage: probe <installed-WinFsp-dll> <new-mount> "
-                     L"<new-control> <Rust-bridge-dll>\n");
+                     L"<new-control> <Rust-bridge-dll> [existing-Store]\n");
     return 1;
   }
   if (!fresh_absolute(argv[2])) {
@@ -398,6 +395,7 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(api, stop, FspFileSystemStopDispatcher);
   LOAD(api, add, FspFileSystemAddDirInfo);
   LOAD(bridge, start, lf_start);
+  LOAD(bridge, reopen, lf_reopen);
   LOAD(bridge, stat, lf_stat);
   LOAD(bridge, open, lf_open);
   LOAD(bridge, info, lf_info);
@@ -405,6 +403,7 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, write, lf_write);
   LOAD(bridge, resize, lf_resize);
   LOAD(bridge, rename, lf_rename);
+  LOAD(bridge, can_delete, lf_can_delete);
   LOAD(bridge, unlink, lf_unlink);
   LOAD(bridge, close, lf_close);
   LOAD(bridge, next, lf_next);
@@ -418,13 +417,15 @@ int wmain(int argc, wchar_t **argv) {
 #undef LOAD
   WCHAR store[32768];
   swprintf_s(store, L"%s\\store", argv[3]);
-  auto started = bridge.start(store, length(store));
+  const bool rebound = argc == 6;
+  auto started =
+      rebound ? bridge.reopen(argv[5], length(argv[5]), store, length(store))
+              : bridge.start(store, length(store));
   if (started < 0)
     return 1;
   Stat root{};
   if (bridge.stat(L"\\", 1, &root) < 0 || !owner_security())
     return 1;
-  root_serial = root.serial;
   FSP_FILE_SYSTEM_INTERFACE callbacks{};
   callbacks.GetVolumeInfo = volume;
   callbacks.GetSecurityByName = security_name;
@@ -469,11 +470,12 @@ int wmain(int argc, wchar_t **argv) {
   bool done = false, captured = false, checked = false;
   bool committed1 = false, committed2 = false, unchanged = false;
   if (status >= 0 && mark(argv[3], L"ready")) {
-    puts("NATIVE_OVERLAY_READY");
+    puts(rebound ? "NATIVE_REBOUND_READY existing_store=true init=false"
+                 : "NATIVE_OVERLAY_READY");
     fflush(stdout);
     auto deadline = GetTickCount64() + 45000;
     while (GetTickCount64() < deadline) {
-      if (!captured && exists(argv[3], L"capture")) {
+      if (!rebound && !captured && exists(argv[3], L"capture")) {
         if (bridge.capture() < 0)
           break;
         captured = true;
@@ -535,7 +537,8 @@ int wmain(int argc, wchar_t **argv) {
         if (!mark(argv[3], L"committed-two"))
           break;
       }
-      if (committed2 && !unchanged && exists(argv[3], L"commit-unchanged")) {
+      if ((committed2 || rebound) && !unchanged &&
+          exists(argv[3], L"commit-unchanged")) {
         UINT32 changed = 1;
         if (bridge.commit(&changed) < 0 || changed != 0)
           break;
@@ -567,9 +570,10 @@ int wmain(int argc, wchar_t **argv) {
   } // failure keeps original Rust owner state until process ends
   puts("NOT_RUN product_Workspace concurrent_commit mapped_lifecycle "
        "full_repository");
-  return done && captured && checked && committed1 && committed2 && unchanged &&
-                 closed == 0 && !callback_error && creates && reads && writes &&
-                 renames && deletes
+  return done && closed == 0 && !callback_error && unchanged &&
+                 (rebound ? (opens && reads)
+                          : (captured && checked && committed1 && committed2 &&
+                             creates && reads && writes && renames && deletes))
              ? 0
              : 1;
 }

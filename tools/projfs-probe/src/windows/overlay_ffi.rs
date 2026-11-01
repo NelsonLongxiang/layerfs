@@ -86,6 +86,36 @@ pub unsafe extern "C" fn lf_start(ptr: *const u16, len: u32) -> i32 {
     }
 }
 #[no_mangle]
+pub unsafe extern "C" fn lf_reopen(
+    store: *const u16,
+    slen: u32,
+    work: *const u16,
+    wlen: u32,
+) -> i32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let store = unsafe { text(store, slen) }?;
+        let work = unsafe { text(work, wlen) }?;
+        let work = super::instance::new_root(Path::new(&work)).map_err(failed)?;
+        let mut slot = SESSION
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .map_err(|_| failed("bridge poisoned"))?;
+        if slot.is_some() || RETAINED.load(Ordering::Acquire) {
+            return Err(failed("session already present or retained"));
+        }
+        *slot = Some(Session::reopen(Path::new(&store), &work)?);
+        Ok::<_, Error>(())
+    }));
+    match result {
+        Ok(Ok(())) => 0,
+        Ok(Err(e)) => {
+            eprintln!("OVERLAY_REOPEN_FAIL {e}");
+            e.status
+        }
+        Err(_) => 0xc0000001u32 as i32,
+    }
+}
+#[no_mangle]
 pub unsafe extern "C" fn lf_stat(ptr: *const u16, len: u32, out: *mut Stat) -> i32 {
     call(|s| unsafe { put(out, s.stat_path(&path(ptr, len)?)?) })
 }
@@ -103,10 +133,16 @@ pub unsafe extern "C" fn lf_open(
             return Err(failed("null open outputs"));
         }
         let name = unsafe { path(ptr, len) }?;
-        let (h, stat) = if create == 1 {
-            s.create_file(&name)?
-        } else {
-            s.open(&name, writable != 0)?
+        let (h, stat) = match create {
+            0 => s.open(&name, writable != 0)?,
+            1 => s.create_file(&name)?,
+            2 => s.create_directory(&name)?,
+            _ => {
+                return Err(crate::native_overlay::refused(
+                    0xc000000d,
+                    "invalid create kind",
+                ))
+            }
         };
         unsafe {
             put(handle, h)?;
@@ -181,6 +217,10 @@ pub unsafe extern "C" fn lf_rename(
     })
 }
 #[no_mangle]
+pub unsafe extern "C" fn lf_can_delete(ptr: *const u16, len: u32) -> i32 {
+    call(|s| s.can_delete(&unsafe { path(ptr, len) }?))
+}
+#[no_mangle]
 pub unsafe extern "C" fn lf_unlink(ptr: *const u16, len: u32) -> i32 {
     call(|s| s.unlink(&unsafe { path(ptr, len) }?))
 }
@@ -190,6 +230,7 @@ pub extern "C" fn lf_close(handle: u64) -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_next(
+    handle: u64,
     after: *const u16,
     alen: u32,
     name: *mut u16,
@@ -206,7 +247,7 @@ pub unsafe extern "C" fn lf_next(
         } else {
             Some(unsafe { text(after, alen) }?)
         };
-        match s.list_next(after.as_ref().map(|s| s.as_bytes()))? {
+        match s.list_next(handle, after.as_ref().map(|s| s.as_bytes()))? {
             None => unsafe { put(length, 0) },
             Some((key, stat)) => {
                 let text = std::str::from_utf8(&key).map_err(failed)?;

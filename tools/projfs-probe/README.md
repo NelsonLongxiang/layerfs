@@ -179,11 +179,16 @@ file changes while the retained captured reader still yields the old bytes.
 The first write is closed before capture so the test does not pretend dirty kernel
 cache bytes have already been published. Cleanup keeps descriptor ownership;
 Close releases its exact OpenFile/KernelDirectory and lookup reference.
-The direct Rust integration test additionally reads/writes an unlinked open file.
+The direct Rust integration tests additionally read/write an unlinked open file,
+move a directory between parents, reject nonempty deletion and cycles, enumerate
+80 base entries, and rebind the same Store after releasing the first owner.
+The small captured-byte control remains intentionally limited to one newly created
+root file; actual nested Commit construction belongs to CapturedNamespace.
 
-This is a non-shipped integration slice, not the product Workspace API. Only exact
-UTF-8 root entries are admitted; nested path operations, new directories, links,
-complete Windows metadata/security changes, concurrent callbacks/capture and
+This is a non-shipped integration slice, not the product Workspace API. Exact
+UTF-8 nested paths, mkdir, cross-directory rename, rmdir and handle-scoped directory
+listing use existing Workspace ports. Links, complete Windows metadata/security
+changes, concurrent callbacks/capture and
 mapped writes remain unqualified. A diagnostic bridge mutex serializes requests
 and control (never the product SQL lock across Store I/O); replace this admission
 before production. The existing Mutation reply-attempt boundary is reused; full
@@ -198,8 +203,13 @@ a later write and a new file appear only in the second immutable snapshot. An
 unchanged third call must return UpToDate without adding a Commit. After the
 provider exits, the supplied checker process reopens the Store read-only and
 checks both versions' exact sizes/bytes, parent relation, via=Workspace, head and
-unchanged base directory membership. This is a read-only Store reopen, not a
-second native mount or a power-loss proof.
+unchanged base directory membership. The harness then starts a second native
+provider process over that exact Store path, with a fresh local Overlay owner and
+mount. Session::reopen calls no Fixture::create/Project Init: it reads the committed
+nested tree and its no-change Commit returns UpToDate. Both owned mounts must be
+removed after stop; no extra History record is created. This is not a power-loss
+or concurrent-mount proof. The diagnostic Workspace authority value remains fixed
+for these sequential, non-overlapping processes; concurrent identity is not claimed.
 
 No fs.apply, re-Init after mutation, native-tree scan/copy, manual SQL or alternate
 content encoding is used. A failed Commit retains its exact original failure;

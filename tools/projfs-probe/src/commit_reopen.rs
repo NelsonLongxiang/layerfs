@@ -51,10 +51,39 @@ pub fn verify(path: &Path) -> Result<(), String> {
         (newer, b"final! capture".as_slice()),
     ] {
         let mut saved = Saved::open_commit(path, BINDING, CURSOR, record.id)?;
-        if saved.list("")?.len() != if record.id == older.id { 8 } else { 9 }
+        if saved.list("")?.len() != if record.id == older.id { 9 } else { 10 }
             || saved.list("many")?.len() != 80
         {
             return Err("complete base membership changed".into());
+        }
+        let nested = if record.id == older.id {
+            b"nested first"
+        } else {
+            b"nested final"
+        };
+        if saved
+            .entry("archive/moved/keep.txt")?
+            .ok_or("nested file absent")?
+            .size
+            != 12
+            || saved.read("archive/moved/keep.txt", 0, 12)? != nested
+            || saved.entry("work")?.is_some()
+            || saved.entry("archive/moved/temp.txt")?.is_some()
+        {
+            return Err("nested directory rename/write/delete differs".into());
+        }
+        if record.id == older.id && saved.entry("archive/new")?.is_some() {
+            return Err("late directory leaked into old Commit".into());
+        }
+        if record.id == newer.id
+            && (saved
+                .entry("archive/new/late.txt")?
+                .ok_or("late nested file absent")?
+                .size
+                != 11
+                || saved.read("archive/new/late.txt", 0, 11)? != b"nested late")
+        {
+            return Err("late nested file differs".into());
         }
         if saved
             .entry("capture.txt")?
