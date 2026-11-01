@@ -2,7 +2,7 @@
 
 > Status: Experimental diagnostic; not a product contract or Workspace implementation.
 
-Two bounded experiments share the same ProjFS callbacks. `live` serves a 96 KiB
+Three bounded experiments share the same ProjFS callbacks. `live` serves a 96 KiB
 fixed sample and exercises local mutations. `store-live` creates a new Disposable
 LayerFS Store, pins one published root, and reads directory metadata and binary
 ranges through public Persistence/Storage/Content ports. It then advances the
@@ -47,7 +47,8 @@ The explicit unavailable path is implemented via System32-only dynamic loading.
 It is not synthetically forced: the final host has ProjFS available, so a missing-DLL
 execution is NOT_RUN at that final state. Do not disable the system feature to test it.
 The probe uses re-execution of its own binary as an ordinary native child, not a shell
-sandbox; it launches no descendants and tests no mapped-write or concurrent-capture guarantee.
+sandbox; it launches no descendants. The separate capture-live counterexample below
+checks mapped-write lifetime, not a stable capture implementation.
 Notification storage is capped at 1024 only for this bounded diagnostic and overflow fails
 the proof. It is not a proposed production cap. The original, renamed and other local
 files remain under the test-owned root after stopping the provider.
@@ -90,3 +91,43 @@ UTF-8 spellings, regular files and directories. Symlinks, unpaired surrogates,
 Win32-special names and duplicate ProjFS ordering refuse; case aliasing, hard-link
 semantics, GC under concurrent ownership and general repository projection are
 not qualified. No root/API/engine files or manifests are changed.
+
+## NTFS capture and mapped-view boundary
+
+The separate `capture-live` mode uses the mutable fixed fixture, not the read-only
+Store source. It probes one ordinary file under a new NTFS projection:
+
+```powershell
+node tools/projfs-probe/tests/capture-smoke.mjs tmp/projfs-probe-target/debug/layerfs-projfs-probe.exe tmp/capture-proof-<unique>
+```
+
+- A read handle with only FILE_SHARE_READ refuses while an external writer or
+  writable mapping exists (Win32 32). In the mapping case both the child's File
+  and section HANDLE are closed; only its mapped view remains.
+- When that handle is acquired with no writer, a new writer in both parent and
+  child is refused. The held handle reads the same byte again. This is a bounded
+  **per-file** input-admission control, not a namespace capture or active COW.
+- A separate permissive read plus LockFileEx does **not** freeze the child's
+  writable view. The parent observes the changed byte through its own read-only
+  mapped view. File length/mtime and notification counts are observations only.
+- PrjStopVirtualizing returns while the child still owns its mapping. A subsequent
+  mapped store is visible although no new callback runs. Provider drain is not an
+  external-reference fence. The local full file is retained after stop.
+
+There is no FlushViewOfFile, fsync, Durable run, user-process cancellation or
+mapping-enumeration heuristic. File-view accesses use raw volatile one-byte
+operations within a 4 KiB view; no Rust reference to externally mutable memory is
+created. Anonymous section handles are dropped after mapping, and views are
+explicitly unmapped with checked outcomes. Only the owned diagnostic child may be
+cancelled on failure; all roots and phase markers are retained.
+The two-process handshake has a 15-second absolute deadline per participant;
+each CLI child has a 30-second bound and the suite uses an explicit <=120s bound.
+This is not a performance measurement or power-loss persistence proof.
+
+A successful restrictive open can admit stable bytes for this one known regular
+file; it does not freeze directory membership, collect an atomic multi-file
+frontier, allow later writes into a new Overlay generation or implement full
+repository semantics. **Do not pass permissively opened or post-stop mutable
+NTFS files as captured input to Save.** A sharing refusal remains a refusal, not
+an automatic wait/retry or a reason to switch to the permissive counterexample.
+Workspace capture/Commit remain Unsupported and W2/W3/W4 are not promoted.

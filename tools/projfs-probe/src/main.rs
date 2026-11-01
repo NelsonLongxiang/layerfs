@@ -74,15 +74,21 @@ fn main() {
             }
             return;
         }
-        use layerfs_projfs_probe::windows::{check, live, live_store, ProbeError};
+        use layerfs_projfs_probe::windows::{
+            capture_child, capture_live, check, live, live_store, ProbeError,
+        };
         let result = if args.len() == 1 && args[0] == "check" {
             check()
         } else if args.len() == 2 && args[0] == "live" {
             live(Path::new(&args[1]))
         } else if args.len() == 2 && args[0] == "store-live" {
             live_store(Path::new(&args[1]))
+        } else if args.len() == 2 && args[0] == "capture-live" {
+            capture_live(Path::new(&args[1]))
+        } else if args.len() == 2 && args[0] == "capture-child" {
+            capture_child(Path::new(&args[1]))
         } else {
-            eprintln!("usage: layerfs-projfs-probe check | live <new-absolute-root> | store-live <new-absolute-root>");
+            eprintln!("usage: layerfs-projfs-probe check | live <new-absolute-root> | store-live <new-absolute-root> | capture-live <new-absolute-root>");
             std::process::exit(1);
         };
         if let Err(error) = result {
