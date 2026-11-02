@@ -5,6 +5,7 @@ import { LayerFSError } from "@layerfs/agent";
 import { NAME, record } from "../../project/list.js";
 import { checkedPath } from "./sessions.js";
 import { NativeInstance } from "./instance.js";
+import { NativeClientRoute } from "./client.js";
 function within(parent, child) {
   const value = relative(parent, child);
   return !value || (!isAbsolute(value) && value !== ".." && !value.startsWith(".." + sep));
@@ -13,6 +14,9 @@ export class NativeInstances {
   #runtime;
   #sessions;
   #held = new Map();
+  #handles = new WeakMap();
+  #routes = new WeakMap();
+  #next = 0;
   constructor(runtime, sessions) { this.#runtime = runtime; this.#sessions = sessions; }
   async create(options) {
     if (!this.#runtime.settings.native || process.platform !== "win32") throw new LayerFSError("Unsupported", "native instances require the Windows-native runtime", null);
@@ -36,12 +40,26 @@ export class NativeInstances {
     this.#sessions.claimInstance(id, input.work);
     const instance = new NativeInstance({ ...input, id, sid, project: options.project, readyTimeoutMs }, this.#sessions, () => { this.#held.delete(id); this.#sessions.releaseInstance(id); });
     this.#held.set(id, instance);
-    return instance.start();
+    const handle = await instance.start();
+    this.#handles.set(handle, { owner: instance, input: { ...input, project: options.project } });
+    return handle;
+  }
+  async bindClient(client, handle, options) {
+    const original = handle && typeof handle === "object" ? this.#handles.get(handle) : null;
+    if (!original) throw new LayerFSError("NoSuchSandbox", "register the original native instance handle created by this runtime; this call never creates one", null);
+    await handle.status();
+    let route = this.#routes.get(handle);
+    if (!route) {
+      if (++this.#next > 9999999999) throw new LayerFSError("Capacity", "native client registration identity exhausted", null);
+      route = new NativeClientRoute(this.#runtime, handle, original.owner, original.input, String(this.#next));
+      this.#routes.set(handle, route);
+    }
+    return route.attach(client, options);
   }
   list() { return [...this.#held.values()].map((i) => i.observation()); }
   assertIdle() {
     if (!this.#held.size) return;
     const instances = this.list();
-    throw new LayerFSError(instances.some((i) => i.state === "retained") ? "Unknown" : "Busy", "runtime still owns a native instance; close that original instance explicitly", { instances });
+    throw new LayerFSError(instances.some((i) => i.state === "retained") || this.#sessions.list().some((s) => s.instance && (s.state === "retained" || s.executionRetained)) ? "Unknown" : "Busy", "runtime still owns a native instance; close that original instance explicitly", { instances });
   }
 }

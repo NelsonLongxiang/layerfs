@@ -77,6 +77,7 @@ export class LayerFSRuntime {
       return found;
     };
     this.native = {
+      bindClient: live((client, instance, options) => this.#nativeInstances.bindClient(client, instance, options)),
       create: live((options) => this.#nativeInstances.create(options)),
       instances: live(() => this.#nativeInstances.list()),
       open: live((options) => this.#nativeSessions.open(options)),

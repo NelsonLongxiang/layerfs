@@ -100,8 +100,13 @@ Store calls (`fs`, `branch`, `project.list_branches`) run in this process
 against the installed Store file at `storePath` (else `LAYERFS_STORE_PATH`),
 which the factory opened; no Sandbox is involved. The project family's
 Sandbox-related calls (`project.list_sandboxes`, `sandbox.*`) still need the
-daemon and refuse `Unsupported` on the Windows-native route (on Linux they
-are served in this process). That
+daemon and refuse `Unsupported` by default on the Windows-native route (on
+Linux they are served in this process). An integration may explicitly bind this
+open local client to its original running Windows native instance through
+[runtime.native.bindClient](runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
+That opt-in native subset serves mount/status/Published Commit/normal unmount
+with image null and mode windows-restricted; it does not change container-image
+creation, Bash Exec or the client’s original in-process Store route. That
 file is `global/store.sqlite` in the project's volume, so the process runs where
 that volume is mounted (`/layerfs-store` in a Sandbox). On Linux the Store sits
 on a local filesystem the daemons share (ext4, xfs, btrfs); on **Windows the

@@ -38,7 +38,7 @@ export class NativeInstance {
   observation() {
     return { id: this.#options.id, project: this.#options.project, work: this.#options.work,
       mode: "windows-restricted", state: this.#state, pid: this.#child?.pid ?? null,
-      sessions: this.#owned().length };
+      sessions: this.#owned().length, retainedSessions: this.#owned().filter((s) => s.state === "retained" || s.executionRetained).length };
   }
   #owned() { return this.#sessions.list().filter((s) => s.instance === this.#options.id); }
   #admit() {

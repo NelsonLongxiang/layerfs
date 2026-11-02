@@ -4,6 +4,33 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Explicit native SDK client control (2026-11-02)
+
+runtime.native.bindClient registers one original running instance on a live local
+SDK client, after exact project/home/Store selection and explicit Published scope.
+The client keeps its original Store transport; only the selected native Workspace
+control methods and backend status reach the
+[native SDK route](../../../api/runtime/src/platform/native-windows/client.js).
+Registration is per client, not a global native-addon override. Container image
+creation, Bash Exec and unimplemented daemon read models remain Unsupported;
+returned image null and mode windows-restricted disclose the actual native scope.
+Mount never creates or restarts the original instance. Client close releases its
+Store client only, not runtime-owned mounts or the original native instance.
+
+The product [identity receipt adapter](../../../engine/crates/layerfs-daemon/src/native/receipt.rs)
+encodes the original bound snapshot and original installed Commit completion.
+State/publication commands do not query latest History to guess a prior result.
+Native counters remain u64/BigInt; current Store head is not guessed from a local
+binding. Unknown or foreign replies retain original process/input/result custody.
+
+Normal SDK unmount selects a clean close unless discard was explicitly true.
+The child first fences complete native callbacks; product Session checks local
+published dirty counts and pending base changes under its original admission lock
+before receive-stop or terminal effects. Dirty and Busy restore callback admission
+and return the original correlation. A JavaScript status preflight cannot replace
+that decision. Legacy explicit standalone unmount behavior stays unchanged.
+See the [runtime contract](../../../api/docs/runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
+
 ## Resident Windows native execution instance (2026-11-02)
 
 runtime.native.create now admits a real acknowledged resident process, original
@@ -348,8 +375,8 @@ and bytes; an unknown tag, value or boolean is refused as before.
 
 A refusal before any effect is the existing `Reply::Refused` with phase
 `force:admission`, `force:custody` or `force:capability`. The daemon routes
-the request in [`control/operations.rs`](../../crates/layerfs-daemon/src/control/operations.rs)
-to [`control/force.rs`](../../crates/layerfs-daemon/src/control/force.rs); the
+the request in [`control/operations.rs`](../../../engine/crates/layerfs-daemon/src/control/operations.rs)
+to [`control/force.rs`](../../../engine/crates/layerfs-daemon/src/control/force.rs); the
 current public SDK operation is `WorkspaceApi::unmount(token, true)`. It retains
 forced outcome facts and passes false for unknown-custody relinquishment. The
 original explicit relinquishment flag remains in the hidden component-proof
@@ -469,7 +496,7 @@ LayerStackId, the existing optional authenticated cursor and a limit of 1 to 32.
 The reply carries bounded BranchRecords and continuation. Its one dispatch arm
 calls the existing HistoryCatalog::branches port in name order, without a hidden
 scan or Branch refresh. All original control records and golden vectors remain.
-The [SDK branches method](../../crates/layerfs-api/src/project/list_branches.rs)
+The [SDK branches method](../../../engine/crates/layerfs-api/src/project/list_branches.rs)
 checks stack identity, ordering, page size and continuation shape on the original
 sequential channel. These source changes establish no performance qualification.
 

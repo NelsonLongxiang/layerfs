@@ -44,7 +44,10 @@ fs, branch, project and operator calls in this process (on Windows,
 `project.list_sandboxes` and the sandbox family still refuse `Unsupported`),
 no worker and no daemon; workspace, exec and daemon calls refuse
 `Unsupported`. See
-[the Windows-native route](../core/docs/issues/352/DIRECT_STORE.md).
+[the Windows-native route](../core/docs/issues/352/DIRECT_STORE.md). An integration
+can explicitly bind an already-open local client to its original running native
+instance for the [native Workspace subset](docs/runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance);
+this changes neither the default route nor container image creation or Bash Exec.
 
 ## The folder
 
@@ -72,7 +75,8 @@ other; it downloads nothing.
 `@layerfs/agent`, and may change in any release; don't add new uses. It
 exports exactly `STATE`, `invokeBackend`, `invokeClient`,
 `invokeClientBackend`, `live`, `outcome`, `page`, `pageOf`, `projectArgs`,
-`sandboxArg`, `storeArgs`, `workspaceArgs`, `deployment` (call helpers),
+`sandboxArg`, `storeArgs`, `workspaceArgs`, `deployment`, `bindClientControl`
+(call helpers; the last is the runtime’s explicit per-client native registration),
 `decode`, `encode`, `frame`, `readFrames` (worker frames), `connection`,
 `endpointOf` (worker client), `addonPath` (in-process addon) and `useWorker`
 (the runtime's worker hand-over).

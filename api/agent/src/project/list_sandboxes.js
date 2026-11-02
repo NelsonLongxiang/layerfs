@@ -6,5 +6,5 @@ import { invokeClient, page, pageOf } from "../client.js";
 export async function list_sandboxes(client, pageSize = 50, pagePos = 0) {
   const at = page(pageSize, pagePos);
   const value = await invokeClient(client, "project.list_sandboxes", {});
-  return pageOf(value.items.map(({ sandbox, name, image, workspaces }) => ({ sandbox, name, image, workspaces })), at);
+  return pageOf(value.items.map(({ sandbox, name, image, workspaces, mode }) => ({ sandbox, name, image, workspaces, ...(mode ? { mode } : {}) })), at);
 }

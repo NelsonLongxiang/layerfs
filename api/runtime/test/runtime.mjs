@@ -42,7 +42,7 @@ try {
     assert.deepEqual(methods(runtime.volume), ["list", "remove"]);
     assert.deepEqual(methods(runtime.worker), ["restart", "start"]);
     assert.deepEqual(methods(runtime.events), ["subscribe"]);
-    assert.deepEqual(methods(runtime.native), ["create", "instances", "list", "open"]);
+    assert.deepEqual(methods(runtime.native), ["bindClient", "create", "instances", "list", "open"]);
     assert.deepEqual(await runtime.native.instances(), []);
     await assert.rejects(runtime.native.create({}), { code: "Unsupported" });
     assert.deepEqual(await runtime.native.list(), []);

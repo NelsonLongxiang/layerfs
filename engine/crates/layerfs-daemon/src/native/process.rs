@@ -14,6 +14,10 @@ use std::{
         Arc, Mutex,
     },
 };
+pub(super) struct Unmount {
+    pub id: u64,
+    pub clean: bool,
+}
 pub(super) struct Shared {
     pub session: Mutex<Option<Session>>,
     pub child_input: Mutex<Option<ChildStdin>>,
@@ -21,7 +25,7 @@ pub(super) struct Shared {
     pub served: AtomicBool,
     pub pending_frame: Mutex<Option<Arc<Frame>>>,
     pub output: Mutex<()>,
-    pub unmount: Mutex<Option<u64>>,
+    pub unmount: Mutex<Option<Unmount>>,
     pub lost: AtomicBool,
 }
 #[derive(Debug)]
@@ -277,15 +281,21 @@ fn run() -> io::Result<()> {
                     let status = f.u32().map_err(io::Error::other)?;
                     let _ = f.u32().map_err(io::Error::other)?;
                     f.end().map_err(io::Error::other)?;
-                    if status != 0x80000011 {
+                    if status != 0x80000011 && status != super::lifecycle::STATUS_DIRTY {
                         return Err(io::Error::other("native unmount refusal changed outcome"));
                     }
-                    let id = shared
+                    let original = shared
                         .unmount
                         .lock()
                         .map_err(|_| io::Error::other("unmount state poisoned"))?
                         .take()
                         .ok_or_else(|| io::Error::other("uncorrelated unmount refusal"))?;
+                    if status == super::lifecycle::STATUS_DIRTY && !original.clean {
+                        return Err(io::Error::other(
+                            "discard unmount returned foreign Dirty outcome",
+                        ));
+                    }
+                    let id = original.id;
                     control::emit(
                         &shared,
                         &format!(
@@ -309,7 +319,8 @@ fn run() -> io::Result<()> {
                         .lock()
                         .map_err(|_| io::Error::other("unmount state poisoned"))?
                         .take()
-                        .ok_or_else(|| io::Error::other("uncorrelated native close"))?;
+                        .ok_or_else(|| io::Error::other("uncorrelated native close"))?
+                        .id;
                     let closed = shared
                         .session
                         .lock()
@@ -371,7 +382,17 @@ fn run() -> io::Result<()> {
                         if end {
                             s.finish_after_native_drain()
                         } else {
-                            s.prepare_close()
+                            let clean = shared
+                                .unmount
+                                .lock()
+                                .map_err(|_| io::Error::other("unmount state poisoned"))?
+                                .as_ref()
+                                .is_some_and(|v| v.clean);
+                            if clean {
+                                s.prepare_clean_close()
+                            } else {
+                                s.prepare_close()
+                            }
                         }
                     };
                     let status = match answer {

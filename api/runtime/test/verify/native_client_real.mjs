@@ -1,0 +1,60 @@
+// Real public SDK client bound explicitly to one original running native instance.
+// <addon> <parent> <host> <WinFsp> <resident-launcher> <fresh-output>
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {mkdirSync,writeFileSync,readFileSync,existsSync,openSync,readSync,closeSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {LayerFSRuntime} from '@layerfs/runtime';
+import {LayerFS} from '@layerfs/agent';
+import {LayerFSBackend} from '@layerfs/backend';
+assert.equal(process.platform,'win32');assert.equal(process.argv.length,8);
+const [addon,executable,host,winfsp,restrictedLauncher,out]=process.argv.slice(2).map(p=>resolve(p));
+assert.equal(existsSync(out),false);mkdirSync(out,{recursive:true});
+const hash=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
+const binaries={addon,executable,host,winfsp,restrictedLauncher};const identity=Object.fromEntries(Object.entries(binaries).map(([k,p])=>[k,hash(p)]));
+const home=join(out,'home'),source=join(out,'source');mkdirSync(home);mkdirSync(source);writeFileSync(join(source,'seed.txt'),'SDK native client seed\n');
+const acl=spawnSync('pwsh',['-NoProfile','-Command',"$ErrorActionPreference='Stop';$who=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name;& icacls.exe $env:LAYERFS_TEST_HOME /inheritance:r /grant:r ('{0}:(OI)(CI)F' -f $who);if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}"],{env:{...process.env,LAYERFS_TEST_HOME:home},encoding:'utf8',timeout:10000});
+assert.ifError(acl.error);assert.equal(acl.status,0,acl.stderr);writeFileSync(join(out,'acl.json'),JSON.stringify({exit:acl.status,stdout:acl.stdout,stderr:acl.stderr},null,2));
+process.env.LAYERFS_NATIVE=addon;process.env.LAYERFS_HOME=home;process.env.LAYERFS_TRACE=join(out,'sdk-trace.jsonl');
+const runtime=await LayerFSRuntime.open({home,native:true,sweep:false});const project='sdk-native';let shop,plain,second,held,failure=null;const events=[];
+async function released(backend,ws){readFileSync(join(ws.path,'published.txt'));const until=Date.now()+8000;for(;;){const state=await backend.daemon.workspace.status(ws);if(state.native.handles===0n&&state.native.active===0n)return;assert.ok(Date.now()<until,'original native Close not observed');await new Promise(ok=>setTimeout(ok,20));}}
+try{
+ let job=await runtime.project.start_init(project,source,{timeout:20000});const until=Date.now()+25000;
+ while(!job.ended){assert.ok(Date.now()<until);await new Promise(ok=>setTimeout(ok,20));job=await runtime.project.get_init(job.id);}assert.equal(job.step,'done',JSON.stringify(job.error));writeFileSync(join(out,'init.json'),JSON.stringify(job,null,2));
+ const store=join(job.project.volume,'global','store.sqlite');process.env.LAYERFS_STORE_PATH=store;
+ shop=await LayerFS.open(project);plain=await LayerFS.open(project);await shop.branch.fork('feature');
+ await assert.rejects(plain.workspace.mount('1','feature'),{code:'Unsupported'});
+ await assert.rejects(runtime.native.bindClient(shop,{}, {commitScope:'published'}),{code:'NoSuchSandbox'});assert.deepEqual(await runtime.native.instances(),[]);
+ const instance=await runtime.native.create({project,executable,host,winfsp,restrictedLauncher,work:join(out,'instance')});const pid=(await instance.status()).pid;
+ await assert.rejects(runtime.native.bindClient(shop,instance,{}),{code:'InvalidInput'});
+ const registration=await runtime.native.bindClient(shop,instance,{commitScope:'published'});assert.equal(registration.image,null);assert.equal(registration.mode,'windows-restricted');events.push({label:'client-registration',...registration,originalInstancePid:pid});
+ await assert.rejects(runtime.native.bindClient(shop,instance,{commitScope:'published'}),{code:'InvalidInput'});
+ assert.deepEqual((await shop.project.list_sandboxes()).items,[{sandbox:registration.sandbox,name:instance.id,image:null,mode:'windows-restricted',workspaces:0}]);
+ await assert.rejects(plain.project.list_sandboxes(),{code:'Unsupported'});await assert.rejects(shop.workspace.mount('999','feature'),{code:'NoSuchSandbox'});
+ await assert.rejects(shop.sandbox.create({image:'sha256:'+'1'.repeat(64)}),{code:'Unsupported'});
+ const first=await shop.workspace.mount(registration.sandbox,'feature');assert.equal(first.image,null);assert.equal(first.mode,'windows-restricted');const backend=LayerFSBackend.of(shop);
+ const initial=await backend.daemon.workspace.status(first);assert.equal(initial.kind,'ok');assert.equal(initial.base,null);assert.equal(initial.branch,'feature');assert.equal(initial.overlay.inodes,0n);assert.equal(initial.headMovedSinceMount,null);events.push({label:'initial-native-status',...initial});
+ await assert.rejects(shop.workspace.exec(first,'echo unsupported'),{code:'Unsupported'});await assert.rejects(shop.sandbox.close(registration.sandbox),{code:'MountsActive'});
+ writeFileSync(join(first.path,'published.txt'),'SDK native publication\n');const binary=Buffer.from(Uint8Array.from({length:300023},(_,i)=>(i*29+17)%251));writeFileSync(join(first.path,'binary.bin'),binary);assert.deepEqual(readFileSync(join(first.path,'binary.bin')),binary);
+ await released(backend,first);
+ await assert.rejects(shop.workspace.unmount(first),e=>e.code==='Dirty'&&e.detail.serviceKept===true);assert.equal(readFileSync(join(first.path,'published.txt'),'utf8'),'SDK native publication\n');
+ const dirty=await backend.daemon.workspace.status(first);assert.ok(dirty.overlay.inodes+dirty.overlay.entries>0n);assert.equal(dirty.native.prepared,false);events.push({label:'dirty-before-effect',serviceKept:true,...dirty});
+ await assert.rejects(shop.workspace.commit(first,'not-supported'),{code:'Unsupported'});await assert.rejects(shop.workspace.commit(first,undefined,true),{code:'Unsupported'});await assert.rejects(shop.workspace.unmount(first,false,true),{code:'Unsupported'});
+ const publication=await shop.workspace.commit(first);assert.equal(publication.kind,'Committed');assert.equal(publication.scope,'published');assert.equal(publication.changed,true);assert.match(publication.head,/^12[0-9a-f]{64}$/);assert.match(publication.root,/^[0-9a-f]{64}$/);assert.equal(publication.parent,null);events.push({label:'original-publication',...publication});
+ await shop.close();shop=undefined;assert.equal((await instance.status()).sessions,1);assert.equal((await runtime.native.list()).length,1);
+ second=await LayerFS.open(project);await runtime.native.bindClient(second,instance,{commitScope:'published'});const backend2=LayerFSBackend.of(second);
+ assert.equal((await second.fs.read('feature','/published.txt')).text,'SDK native publication\n');const commits=await second.branch.list_commits('feature');assert.equal(commits.items.length,1);assert.equal(commits.items[0].id,publication.head);assert.equal(commits.items[0].root,publication.root);events.push({label:'sdk-independent-history',head:commits.items[0].id,root:commits.items[0].root,parent:commits.items[0].parent});
+ held=openSync(join(first.path,'published.txt'),'r');await assert.rejects(second.workspace.unmount(first),e=>e.code==='Busy'&&e.detail.serviceKept===true);const piece=Buffer.alloc(3);assert.equal(readSync(held,piece,0,3,0),3);assert.equal(piece.toString(),'SDK');closeSync(held);held=undefined;await released(backend2,first);
+ const unchanged=await second.workspace.commit(first);assert.equal(unchanged.kind,'UpToDate');assert.equal(unchanged.head,publication.head);assert.equal(unchanged.changed,false);events.push({label:'original-uptodate',...unchanged});
+ const secondMount=await second.workspace.mount(registration.sandbox,'feature');assert.deepEqual(readFileSync(join(secondMount.path,'binary.bin')),binary);writeFileSync(join(secondMount.path,'discarded.txt'),'not published');await second.workspace.unmount(secondMount,true);
+ const fresh=await second.workspace.mount(registration.sandbox,'feature');assert.equal(existsSync(join(fresh.path,'discarded.txt')),false);assert.deepEqual(readFileSync(join(fresh.path,'binary.bin')),binary);await second.workspace.unmount(fresh);
+ assert.equal((await second.sandbox.list_workspaces(registration.sandbox)).items.length,1);
+ const clean=await second.workspace.unmount(first);assert.equal(clean.kind,'Unmounted');assert.equal(clean.processExit,0);assert.equal(existsSync(first.path),false);events.push({label:'normal-sdk-unmounted',...clean});
+ await assert.rejects(backend2.daemon.workspace.status(first),{code:'NotMounted'});assert.deepEqual((await second.sandbox.list_workspaces(registration.sandbox)).items,[]);
+ const closed=await second.sandbox.close(registration.sandbox);assert.equal(closed.tokenClosed,true);assert.equal(closed.desktopClosed,true);assert.equal(closed.processExit,0);events.push({label:'original-instance-closed',...closed});
+ assert.deepEqual((await second.project.list_sandboxes()).items,[]);await assert.rejects(second.workspace.mount(registration.sandbox,'feature'),{code:'NoSuchSandbox'});assert.equal((await runtime.native.instances()).length,0);assert.deepEqual(await runtime.native.list(),[]);
+ await second.close();second=undefined;await plain.close();plain=undefined;await runtime.close();for(const[k,p]of Object.entries(binaries))assert.equal(hash(p),identity[k]);
+ console.log('PASS SDK native binding: original running instance only,local Store retained,dirty/busy reversible,exact original Commit/UpToDate identities,client close preserves mount,discard explicit and checked terminal close');
+}catch(error){failure={message:error.message,code:error.code??null};throw error;}
+finally{if(held!==undefined)closeSync(held);for(const client of [shop,plain,second])if(client)await client.close().catch(()=>{});writeFileSync(join(out,'result.json'),JSON.stringify({status:failure?'FAIL':'PASS',read_at:new Date().toISOString(),identity,failure,events,instances:runtime.closed?[]:await runtime.native.instances(),sessions:runtime.closed?[]:await runtime.native.list(),runtime_closed:runtime.closed,actual_public_sdk_consumer:true,container_image_create_unchanged:true,native_bash_exec_supported:false},(_,v)=>typeof v==='bigint'?v.toString():v,2));}

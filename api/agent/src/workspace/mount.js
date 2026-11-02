@@ -15,5 +15,5 @@ export async function mount(client, sandbox, branch, ...rest) {
     throw new LayerFSError("InvalidInput", "workspace.mount(sandbox, branch) takes a Sandbox number such as \"1\" (from sandbox.create() or project.list_sandboxes()) and a Branch name, and no options", null);
   }
   const value = await invokeClient(client, "workspace.mount", { sandbox, branch });
-  return { sandbox: value.sandbox, path: value.path, image: value.image };
+  return { sandbox: value.sandbox, path: value.path, image: value.image, ...(value.mode ? { mode: value.mode } : {}) };
 }

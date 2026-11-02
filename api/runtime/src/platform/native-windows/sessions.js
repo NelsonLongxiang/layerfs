@@ -64,7 +64,7 @@ function checked(options, runtime) {
   frame.write("LFSBND01"); frame.writeUInt16LE(options.catalog.length, 8);
   Buffer.from(options.catalog).copy(frame, 10); Buffer.from(options.cursor).copy(frame, 10 + options.catalog.length);
   Buffer.from(options.branch, "hex").copy(frame, 42 + options.catalog.length); workspace.copy(frame, 59 + options.catalog.length);
-  return { ...paths, id: workspace.toString("hex"), frame, readyTimeoutMs, restricted };
+  return { ...paths, id: workspace.toString("hex"), frame, readyTimeoutMs, restricted, branch: options.branch.toLowerCase() };
 }
 
 export class NativeSessions {

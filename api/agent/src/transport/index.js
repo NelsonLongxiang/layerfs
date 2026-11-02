@@ -17,6 +17,9 @@ import { workerClient } from "./worker_client.js";
 /** The worker `useWorker` handed over: { endpoint }, else null. */
 let handed = null;
 let local = null;
+const localBindings = new WeakSet();
+/** Internal: a client selected the real in-process binding, not a worker. */
+export const isLocalBinding = (transport) => localBindings.has(transport);
 /** Worker clients by endpoint file. */
 const workers = new Map();
 
@@ -43,7 +46,9 @@ export function servesDaemonCalls() {
 
 export function binding() {
   const endpoint = handed?.endpoint ?? setting("WORKER_ENDPOINT");
-  if (!endpoint) return (local ??= inprocess());
+  if (!endpoint) {
+    local ??= inprocess(); localBindings.add(local); return local;
+  }
   let client = workers.get(endpoint);
   if (!client) workers.set(endpoint, (client = workerClient(endpoint)));
   return client;

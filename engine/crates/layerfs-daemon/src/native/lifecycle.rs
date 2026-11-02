@@ -3,6 +3,8 @@ use super::session::State;
 use super::types::workspace_error;
 use super::{failed, refused, Result};
 use layerfs_history::{BranchId, WorkspaceId};
+// Customer NTSTATUS on the private protocol: not a Win32 system error.
+pub(super) const STATUS_DIRTY: u32 = 0xe0f50001;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CloseState {
@@ -114,6 +116,12 @@ impl State {
         })
     }
     pub(super) fn prepare_close(&mut self) -> Result<()> {
+        self.prepare_close_with(false)
+    }
+    pub(super) fn prepare_clean_close(&mut self) -> Result<()> {
+        self.prepare_close_with(true)
+    }
+    fn prepare_close_with(&mut self, clean: bool) -> Result<()> {
         self.accepting()?;
         if self.coordinating.is_some() {
             return Err(refused(0x80000011, "close coordination still owned"));
@@ -136,6 +144,27 @@ impl State {
                 0x80000011,
                 "native file/directory references still owned until Close",
             ));
+        }
+        // The transport fences complete native callbacks before this control.
+        // The Session lock serializes Commit admission; no JS status probe can
+        // replace this before-effect decision. Dirty leaves ordinary service live.
+        if clean {
+            let state = self.frontier()?;
+            if state.dirty_inodes != 0
+                || state.dirty_directory_entries != 0
+                || state.base_root
+                    != *self
+                        .bound
+                        .snapshot()
+                        .map_err(workspace_error)?
+                        .effective_root
+                        .as_bytes()
+            {
+                return Err(refused(
+                    STATUS_DIRTY,
+                    "uncommitted published changes; explicit discard required",
+                ));
+            }
         }
         self.requests.try_stop_receive().map_err(|e| match e {
             layerfs_fuse::DispatchError::Busy => {

@@ -105,6 +105,11 @@ impl Session {
     pub fn close_state(&self) -> CloseState {
         self.inner().close_state()
     }
+    /// Like prepare_close, after the caller fences complete native callbacks;
+    /// also refuse unpublished changes before any receive/terminal effect.
+    pub fn prepare_clean_close(&mut self) -> Result<()> {
+        self.attempt(|s| s.prepare_clean_close())
+    }
     pub fn prepare_close(&mut self) -> Result<()> {
         self.attempt(|s| s.prepare_close())
     }

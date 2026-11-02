@@ -2,7 +2,7 @@
 // addon in this process, or the worker client). The binding resolves
 // `{ value }` or `{ refused }` (plus `telemetry` when traced); a refusal
 // becomes a LayerFSError. Nothing is retried.
-import { binding, servesDaemonCalls } from "./transport/index.js";
+import { binding, servesDaemonCalls, isLocalBinding } from "./transport/index.js";
 
 /** The binding a client was made with (see transport/index.js). */
 export const transportOf = (client) => client[STATE].transport;
@@ -113,17 +113,32 @@ export function live(client) {
   }
 }
 
+// Per-client opt-in: Store calls always keep their original local binding.
+const NATIVE_CONTROL = new Set(["project.list_sandboxes", "sandbox.list_workspaces", "sandbox.close", "sandbox.create", "workspace.mount", "workspace.commit", "workspace.unmount", "workspace.exec"]);
+export function bindClientControl(client, control) {
+  live(client);
+  if (!isLocalBinding(transportOf(client))) throw new LayerFSError("Unsupported", "native instance registration requires this client's in-process Store binding", null);
+  if (client[STATE].control) throw new LayerFSError("InvalidInput", "this client already has its explicit native control; open another client for another registration", null);
+  if (!control || typeof control.call !== "function" || typeof control.backendCall !== "function") throw new LayerFSError("InvalidInput", "native client control is incomplete", null);
+  client[STATE].control = Object.freeze({ call: control.call, backendCall: control.backendCall });
+}
+function controlOf(client, op) {
+  const selected = client[STATE].control;
+  if (selected && (NATIVE_CONTROL.has(op) || op.startsWith("backend.daemon."))) return selected;
+  return transportOf(client);
+}
+
 /** One call of an open client, with its deployment selection, discovery
  * home and the Store this process opened. */
 export function invokeClient(client, op, args) {
   live(client);
-  return invoke(op, { ...projectArgs(client), ...storeArgs(client), ...args }, client.options, transportOf(client));
+  return invoke(op, { ...projectArgs(client), ...storeArgs(client), ...args }, client.options, controlOf(client, op));
 }
 
 /** One backend-table call of an open client, with the same fields. */
 export function invokeClientBackend(client, op, args) {
   live(client);
-  return invokeBackend(op, { ...projectArgs(client), ...storeArgs(client), ...args }, client.options, transportOf(client));
+  return invokeBackend(op, { ...projectArgs(client), ...storeArgs(client), ...args }, client.options, controlOf(client, op));
 }
 
 /** A call's project fields: the project, discovery home and the client's

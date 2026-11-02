@@ -24,7 +24,7 @@ for (const name of ["TRACE", "TRACE_STEP", "TRACE_START", "WORKER_ENDPOINT"]) {
 }
 const agent = await import("@layerfs/agent");
 const { LayerFS, CODES } = agent;
-const native = selected === "dispatch" ? null : (await import(FAKE)).default;
+const native = selected === "dispatch" ? null : (await import(pathToFileURL(FAKE).href)).default;
 
 if (selected === "surface") {
   const shop = await LayerFS.open("website");
@@ -49,7 +49,7 @@ if (selected === "surface") {
   assert.equal(agent.INIT_TIMEOUT_MS, 300_000, "Init's default timeout: 300 s");
   // the internal entry exports exactly what its header and the README list
   assert.deepEqual(Object.keys(await import("@layerfs/agent/internal")).sort(), [
-    "STATE", "addonPath", "connection", "decode", "deployment", "encode", "endpointOf", "frame", "invokeBackend", "invokeClient",
+    "STATE", "addonPath", "bindClientControl", "connection", "decode", "deployment", "encode", "endpointOf", "frame", "invokeBackend", "invokeClient",
     "invokeClientBackend", "live", "outcome", "page", "pageOf", "projectArgs", "readFrames", "sandboxArg", "storeArgs", "useWorker", "workspaceArgs",
   ]);
   await shop.close();

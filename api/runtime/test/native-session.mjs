@@ -38,7 +38,15 @@ try{
   session=await runtime.native.open(input);assert.equal(Object.isFrozen(session),true);
   await assert.rejects(runtime.close(),{code:"Busy"});assert.equal(runtime.closed,false);
   await assert.rejects(session.commit(),{code:"Unsupported"});assert.equal(existsSync(marker),false);
-  if(selected==="busy"){
+  if(selected==='identity-valid'||selected==='dirty-clean'){
+   if(selected==='dirty-clean')await assert.rejects(session.unmount(false),e=>e.code==='Dirty'&&e.detail.serviceKept===true);
+   const observed=await session.state();assert.equal(observed.workspace,session.id);assert.equal(observed.branch,input.branch);assert.equal(observed.dirtyInodes,1n);assert.equal(observed.dirtyEntries,2n);assert.equal(observed.pendingMerge,false);
+   const original=await session.commit('published',true);assert.equal(original.changed,true);assert.equal(original.parent,null);assert.equal(original.head,'12'+'ab'.repeat(32));assert.equal(original.root,'ef'.repeat(32));assert.equal(original.revision,8n);
+   const terminal=await session.unmount(false);assert.equal(terminal.processExit,0);await runtime.close();
+  }else if(selected.startsWith('identity-')||selected==='dirty-discard'){
+   const operation=selected==='dirty-discard'?session.unmount(true):['identity-null-head','identity-foreign-publication','identity-short-root'].includes(selected)?session.commit('published',true):session.state();
+   await assert.rejects(operation,{code:'Unknown'});await assert.rejects(session.status(),{code:'Unknown'});await assert.rejects(runtime.close(),{code:'Unknown'});assert.equal(JSON.parse(readFileSync(marker,'utf8')).calls,1);
+  }else if(selected==="busy"){
    await assert.rejects(session.unmount(),{code:"Busy",detail:{session:session.id,status:"80000011",serviceKept:true}});
    const state=await session.status();assert.equal(state.root,1n);assert.equal(state.revision,7n);
    await session.unmount();assert.deepEqual(await runtime.native.list(),[]);await runtime.close();

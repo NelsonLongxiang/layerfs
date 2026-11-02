@@ -110,7 +110,31 @@ pub(super) fn run(shared: Arc<Shared>) {
                     };
                     emit(&shared, &line)
                 }
-                [_, "commit", "published"] => {
+                [_, "state"] => {
+                    let line = {
+                        let s = shared
+                            .session
+                            .lock()
+                            .map_err(|_| io::Error::other("Session poisoned"))?;
+                        super::receipt::state(
+                            s.as_ref()
+                                .ok_or_else(|| io::Error::other("Session closed"))?,
+                            id,
+                        )
+                    };
+                    match line {
+                        Ok(line) => emit(&shared, &line),
+                        Err(e) => emit(
+                            &shared,
+                            &format!(
+                                "NATIVE_SERVICE_REFUSED id={id} status={:08x}",
+                                e.status as u32
+                            ),
+                        ),
+                    }
+                }
+                [_, "commit", "published"] | [_, "commit", "published", "identity"] => {
+                    let identity = words.len() == 4;
                     let work = {
                         let mut s = shared
                             .session
@@ -144,7 +168,11 @@ pub(super) fn run(shared: Arc<Shared>) {
                     };
                     match answer {
                         Ok(receipt) => {
-                            let line=format!("NATIVE_SERVICE_COMMIT id={id} changed={} revision={} published=true",receipt.changed,receipt.frontier.revision);
+                            let line = if identity {
+                                super::receipt::commit(&receipt, id)
+                            } else {
+                                format!("NATIVE_SERVICE_COMMIT id={id} changed={} revision={} published=true",receipt.changed,receipt.frontier.revision)
+                            };
                             if let Err(e) = emit(&shared, &line) {
                                 std::mem::forget(receipt);
                                 return Err(e);
@@ -160,7 +188,8 @@ pub(super) fn run(shared: Arc<Shared>) {
                         ),
                     }
                 }
-                [_, "unmount"] => {
+                [_, "unmount"] | [_, "unmount", "clean"] | [_, "unmount", "discard"] => {
+                    let clean = words.get(2).is_some_and(|s| *s == "clean");
                     let mut pending = shared
                         .unmount
                         .lock()
@@ -171,7 +200,7 @@ pub(super) fn run(shared: Arc<Shared>) {
                             &format!("NATIVE_SERVICE_REFUSED id={id} status=80000011"),
                         );
                     }
-                    *pending = Some(id);
+                    *pending = Some(super::process::Unmount { id, clean });
                     drop(pending);
                     let mut out = shared
                         .child_input

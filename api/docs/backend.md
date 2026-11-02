@@ -11,6 +11,15 @@ UIs and tools use it to show a project; it changes no file. It wraps an open
 [call trace](#the-call-trace), the other way to watch a run, is described here
 too.
 
+## Native client registration
+
+On an explicitly registered local native SDK client, daemon.workspace.status
+reads the original product Session and names mode windows-restricted. Bound
+identity, dirty counters and native state are observed; current Store head and
+headMovedSinceMount remain null when not observed. Other daemon/process read
+models stay Unsupported; Store reads keep their original in-process binding.
+See [the native runtime contract](runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
+
 ## Calls
 
 ```js

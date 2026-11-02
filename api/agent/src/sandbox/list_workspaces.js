@@ -21,6 +21,7 @@ export async function list_workspaces(client, sandbox, pageSize = 50, pagePos = 
     base: w.base ?? null,
     activity: ACTIVITY[w.activity] ?? w.activity ?? null,
     changed: w.dirty ? w.dirty.inodes + w.dirty.entries > 0 : null,
+    ...(w.mode ? { mode: w.mode } : {}),
     workspace: w.workspace,
     state: w.activity,
     dirty: w.dirty ?? null,

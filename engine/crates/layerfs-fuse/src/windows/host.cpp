@@ -77,7 +77,8 @@ int wmain(int argc, wchar_t **argv) {
     }
     result = channel->control(20);
     if (result < 0) {
-      if (result == STATUS_DEVICE_BUSY) {
+      if (result == STATUS_DEVICE_BUSY ||
+          result == static_cast<NTSTATUS>(0xe0f50001)) {
         if (adapter.resume_callbacks() < 0)
           return 1;
         channel->event(102, status_body(result));

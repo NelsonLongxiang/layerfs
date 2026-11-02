@@ -22,7 +22,7 @@ function flag(text) {
   if (text !== "true" && text !== "false") throw new Error("native boolean grammar");
   return text === "true";
 }
-const CODES = { "80000011": "Busy", c000000d: "InvalidInput", c00000bb: "Unsupported", c0000128: "NotMounted" };
+const CODES = { "80000011": "Busy", c000000d: "InvalidInput", c00000bb: "Unsupported", c0000128: "NotMounted", e0f50001: "Dirty" };
 
 export class NativeSession {
   #options;
@@ -31,6 +31,7 @@ export class NativeSession {
   #child;
   #state = "starting";
   #root;
+  #boundBranch;
   #ready = deferred();
   #timer;
   #line = Buffer.alloc(0);
@@ -134,8 +135,9 @@ export class NativeSession {
       clearTimeout(this.#timer); this.#state = "serving";
       this.#ready.resolve(Object.freeze({ id: this.#options.id, path: this.path,
         status: () => this.#call("status"),
-        commit: (scope) => scope === "published" ? this.#call("commit") : Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit scope \"published\"; application-visible mapping capture is unsupported", null)),
-        unmount: () => this.#call("unmount"),
+        state: () => this.#call("state"),
+        commit: (scope, details = false) => scope === "published" && typeof details === "boolean" ? this.#call(details ? "publication" : "commit") : Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit scope \"published\"; application-visible mapping capture is unsupported", null)),
+        unmount: (discard = true) => typeof discard === "boolean" ? this.#call(discard ? "unmount" : "unmount-clean") : Promise.reject(new LayerFSError("InvalidInput", "native unmount discard must be boolean", null)),
         exec: (executable, args, options) => {
           if (this.#state === "retained") return Promise.reject(this.#failure.error);
           if (this.#state !== "serving") return Promise.reject(new LayerFSError(this.#state === "closed" ? "NotMounted" : "Busy", "native command needs its original serving Session", null));
@@ -144,18 +146,20 @@ export class NativeSession {
       }));
       return;
     }
-    match = /^NATIVE_SERVICE_(STATUS|COMMIT|UNMOUNTED|REFUSED) id=([0-9]+) (.*)$/.exec(line);
+    match = /^NATIVE_SERVICE_(STATUS|STATE|COMMIT|PUBLICATION|UNMOUNTED|REFUSED) id=([0-9]+) (.*)$/.exec(line);
     if (!match || !["serving", "unmounting"].includes(this.#state)) throw new Error("unexpected native reply");
     const id = uint(match[2]).toString(), p = this.#pending.get(id);
     if (!p || p.answered) throw new Error("foreign or duplicate native reply id");
     const kind = match[1], payload = match[3];
+    const unmount = ["unmount", "unmount-clean"].includes(p.kind);
     if (kind === "REFUSED") {
       const refusal = /^status=([0-9a-f]{8})( service_kept=true)?$/.exec(payload);
-      if (!refusal || (refusal[2] && p.kind !== "unmount")) throw new Error("native refusal shape");
+      if (!refusal || (refusal[2] && !unmount)) throw new Error("native refusal shape");
       const code = CODES[refusal[1]];
       if (!code) { this.#retain("native product retained a failed or unknown original operation", new Error("native status " + refusal[1]), line); return; }
-      if (p.kind === "unmount") {
-        if (code !== "Busy" || !refusal[2]) throw new Error("unmount refusal did not establish service retention");
+      if (code === "Dirty" && p.kind !== "unmount-clean") throw new Error("Dirty response for a different original operation");
+      if (unmount) {
+        if (!["Busy", "Dirty"].includes(code) || !refusal[2] || (code === "Dirty" && p.kind !== "unmount-clean")) throw new Error("unmount refusal did not establish the original service/discard outcome");
         this.#state = "serving";
       }
       this.#pending.delete(id);
@@ -170,12 +174,29 @@ export class NativeSession {
       if (value.retained) { this.#retain("native status reports original failure custody", new Error("native retained state"), line); return; }
       this.#pending.delete(id); p.resolve(value); return;
     }
+    if (kind === "STATE" && p.kind === "state") {
+      const s = /^workspace=([0-9a-f]{64}) branch=(11[0-9a-f]{32}) head=(-|12[0-9a-f]{64}) base=(32[0-9a-f]{64}) root=([0-9a-f]{64}) revision=([0-9]+) dirty_inodes=([0-9]+) dirty_entries=([0-9]+) handles=([0-9]+) active=([0-9]+) retained=(true|false) prepared=(true|false) pending_commit=([01]) pending_merge=(true|false)$/.exec(payload);
+      if (!s || s[1] !== this.#options.id) throw new Error("native state identity/shape");
+      const expectedBranch = this.#boundBranch ?? (this.#options.project ? null : this.#options.branch.toLowerCase());
+      if (expectedBranch && expectedBranch !== s[2]) throw new Error("native Branch binding changed");
+      this.#boundBranch = s[2];
+      const value = { workspace: s[1], branch: s[2], head: s[3] === "-" ? null : s[3], baseLayer: s[4], root: s[5], revision: uint(s[6]), dirtyInodes: uint(s[7]), dirtyEntries: uint(s[8]), handles: uint(s[9]), active: uint(s[10]), retained: flag(s[11]), prepared: flag(s[12]), pendingCommit: s[13] === "1", pendingMerge: flag(s[14]) };
+      if (value.retained) { this.#retain("native state reports original uncertain custody", new Error("native retained state"), line); return; }
+      this.#pending.delete(id); p.resolve(value); return;
+    }
+    if (kind === "PUBLICATION" && p.kind === "publication") {
+      const c = /^changed=(true|false) revision=([0-9]+) head=(-|12[0-9a-f]{64}) base=(32[0-9a-f]{64}) root=([0-9a-f]{64}) parent=(-|12[0-9a-f]{64}) displaced=(-|12[0-9a-f]{64}) merge_from=(-|12[0-9a-f]{64}) merge_head=(-|12[0-9a-f]{64}) published=true$/.exec(payload);
+      if (!c || (c[1] === "true" && c[3] === "-")) throw new Error("native original publication shape");
+      const identity = (s) => s === "-" ? null : s;
+      const value = { changed: flag(c[1]), revision: uint(c[2]), head: identity(c[3]), baseLayer: c[4], root: c[5], parent: identity(c[6]), displacedHead: identity(c[7]), merged: c[8] === "-" && c[9] === "-" ? null : { from: identity(c[8]), head: identity(c[9]) }, scope: "published", published: true };
+      this.#pending.delete(id); p.resolve(value); return;
+    }
     if (kind === "COMMIT" && p.kind === "commit") {
       const c = /^changed=(true|false) revision=([0-9]+) published=true$/.exec(payload);
       if (!c) throw new Error("native Commit shape");
       this.#pending.delete(id); p.resolve({ changed: flag(c[1]), revision: uint(c[2]), scope: "published", published: true }); return;
     }
-    if (kind === "UNMOUNTED" && p.kind === "unmount") {
+    if (kind === "UNMOUNTED" && unmount) {
       const u = /^native_exit=0 dispatcher_exit=(c0000120|00000000) overlay_closed=true$/.exec(payload);
       if (!u) throw new Error("native terminal shape");
       p.answered = true;
@@ -187,14 +208,14 @@ export class NativeSession {
   #call(kind) {
     if (this.#state === "retained") return Promise.reject(this.#failure.error);
     if (this.#state === "closed") return Promise.reject(new LayerFSError("NotMounted", "this native Session is closed", { session: this.#options.id }));
-    if (this.#state !== "serving" || (kind === "unmount" && this.#pending.size)) return Promise.reject(new LayerFSError("Busy", "native Session is starting, terminating or still owns original calls", { session: this.#options.id }));
+    if (this.#state !== "serving" || (["unmount", "unmount-clean"].includes(kind) && this.#pending.size)) return Promise.reject(new LayerFSError("Busy", "native Session is starting, terminating or still owns original calls", { session: this.#options.id }));
     if (++this.#next > MAX_U64) {
       this.#retain("native command identity exhausted", new Error("native id overflow")); return Promise.reject(this.#failure.error);
     }
     const id = this.#next.toString();
-    const p = { ...deferred(), id, kind, request: id + " " + (kind === "commit" ? "commit published" : kind) + "\n", answered: false };
+    const p = { ...deferred(), id, kind, request: id + " " + (kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + "\n", answered: false };
     this.#pending.set(id, p);
-    if (kind === "unmount") this.#state = "unmounting";
+    if (["unmount", "unmount-clean"].includes(kind)) this.#state = "unmounting";
     try { this.#child.stdin.write(p.request, (cause) => { if (cause) this.#retain("native command transfer failed; original request retained", cause, p); }); }
     catch (cause) { this.#retain("native command transfer failed; original request retained", cause, p); }
     return p.promise;
@@ -204,7 +225,7 @@ export class NativeSession {
     if (["failed", "retained"].includes(this.#state)) return;
     if (code === 0 && signal === null && this.#terminal && this.#line.length === 0 && this.#pending.size === 1) {
       const p = this.#pending.get(this.#terminal.id);
-      if (p?.kind === "unmount" && p.answered) {
+      if (["unmount", "unmount-clean"].includes(p?.kind) && p.answered) {
         this.#state = "closed"; this.#pending.clear(); this.#releaseClosed(); retained.delete(this);
         p.resolve({ ...this.#terminal, processExit: 0, processSignal: null }); return;
       }

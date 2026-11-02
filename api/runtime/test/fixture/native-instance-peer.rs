@@ -2,6 +2,7 @@
 use std::io::{self, BufRead, Write};
 fn main() {
  let mode=std::env::var("LAYERFS_INSTANCE_PEER_CASE").unwrap();
+ if mode=="sdk-guard" {std::thread::spawn(||{std::thread::sleep(std::time::Duration::from_secs(10));std::process::exit(0);});}
  let ready=format!("LFS_INSTANCE_READY pid={} created=1 restricted=true integrity=low\n",std::process::id());
  if mode=="setup" {print!("LFS_INSTANCE_FAILED win32=5\n");io::stdout().flush().unwrap();std::process::exit(1);}
  if mode=="late" {std::thread::sleep(std::time::Duration::from_millis(200));print!("{ready}");io::stdout().flush().unwrap();return;}

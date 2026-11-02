@@ -50,11 +50,11 @@ missing setting does not refuse `open`: `status().missing` lists it.
 ## Explicit Windows-native filesystem Sessions
 
 With `native: true` on Windows, `runtime.native` is an explicit host-owned
-filesystem process API. It is **not** the agent SDK Sandbox/Workspace family:
-`workspace.mount(sandbox, branch)` still names an already-running Sandbox and
-remains unsupported on the Windows-native SDK route. This API does not register
-one, choose a container image, or start a WSL/Linux worker. Explicit native
-Sessions can launch ordinary commands as described below.
+filesystem process API. The default agent SDK container path is unchanged. An
+integration may explicitly bind one original running native instance to an
+already-open local SDK client, as described below; an unbound Windows-native
+client still refuses daemon calls. No container image or WSL/Linux worker is
+selected. Native Sessions can launch ordinary commands as described below.
 
 ```js
 const runtime = await LayerFSRuntime.open({ home, native: true, sweep: false });
@@ -126,6 +126,79 @@ It does not qualify complete SDK Ready, arbitrary mappings/kernel references,
 crash recovery or public endpoint authentication. Store calls remain in-process
 on the native route; no Store worker is introduced.
 
+### Bind an existing SDK client to a running native instance
+
+An integration may opt one open in-process SDK client into the original native
+instance it already created:
+
+```js
+const client = await LayerFS.open(project); // original direct Store binding
+const registration = await runtime.native.bindClient(client, instance, {
+  commitScope: "published",
+});
+const ws = await client.workspace.mount(registration.sandbox, "feature");
+const state = await LayerFSBackend.of(client).daemon.workspace.status(ws);
+const publication = await client.workspace.commit(ws);
+await client.workspace.unmount(ws);
+await client.sandbox.close(registration.sandbox);
+await client.close();
+```
+
+bindClient starts nothing. It requires the exact original instance handle from
+this runtime, a live local client selecting the same project/home/Store, and
+explicit commitScope: "published". It does not replace the client’s Store binding,
+use a worker, open another Store or switch global transport. Wrong instance or
+project selection refuses before effects. A client registers once; another client
+can explicitly register the same original instance and use its still-owned paths.
+A client not registered remains on its original route. This registration is
+process-local, not machine discovery or cross-process credentials.
+
+The returned { sandbox, image: null, mode: "windows-restricted" } names this
+instance on those clients. project.list_sandboxes and sandbox.list_workspaces
+report it explicitly in that native mode. It is not a container-image creation:
+sandbox.create(image) stays Unsupported. workspace.exec’s Bash command contract,
+background process APIs, forced unmount, custom Commit message and force-Commit
+remain Unsupported. Use the existing explicit native Session command owner for
+trusted/restricted ordinary executables; the SDK registration does not pretend
+that Windows argument-vector execution is Bash.
+
+workspace.mount requires that named original instance still running, uses its
+existing mount implementation and admits at most 16 original Workspace owners.
+It never creates, restarts or changes instance placement. Mounts, incomplete
+admissions and command completion retain their original lifecycle; an unknown
+admission cannot be presented as an empty list or silently deleted.
+
+Native status returns mode plus actual bound workspace/branch identity, base head,
+baseLayer/root and observed dirty counts as bigint. Detailed native counters are
+under native. Unobserved current Store head and headMovedSinceMount are null,
+not guessed false; versioned container delta-read models are not fabricated.
+A prepared/committing observation is not complete Ready or kernel-drain evidence.
+
+workspace.commit returns kind Committed or UpToDate, original head/baseLayer/root,
+parent/displacedHead/merged identities, revision bigint and explicit
+scope: "published", published: true. These are the original product completion
+receipt, not a post-hoc latest-History query. The native subset does not synthesize
+the container Commit record’s storage/timing/message/LWW fields; read History or
+Store storage separately if those are needed. No automatic Commit or retry occurs.
+
+Normal SDK unmount defaults to discard: false. After fencing complete native
+callbacks, the product Session refuses Dirty before receive-stop/terminal effects
+if locally published mutations or pending base changes remain. Dirty and Busy
+restore ordinary callback service; a status preflight in JavaScript cannot replace
+that atomic admission. Explicit discard: true permits dropping uncommitted local
+changes. The old standalone Session.unmount() default remains its original explicit
+terminal behavior. Force never bypasses the native implementation.
+
+An SDK client.close releases only its original Store client; it does not unmount
+or stop the runtime’s instance. After normal unmount, another explicit mount can
+read published state; after sandbox.close on that registered instance, later mount
+refuses NoSuchSandbox and cannot autostart it. The original terminal receipts and
+process exits are still required. Lost/wrong status or publication replies keep
+Unknown, original frames and runtime ownership without resend, including an
+admission that never returned a Workspace to its SDK caller.
+
+See the [SDK native binding proof](../../core/docs/issues/352/WINDOWS-NATIVE-CLIENT-2026-11-02.md).
+
 ### Resident native execution instances
 
 runtime.native.create(options) starts one real Windows resident process owning a
@@ -191,10 +264,10 @@ tail remain held process-locally; this is not crash recovery.
 
 The agent SDK's current Sandbox contract selects a container image and owns an
 acknowledged container. The native mode selects this restricted Windows context,
-not an OCI image or equivalent host confinement. Therefore sandbox.create and
-workspace.mount/exec on the native SDK table remain Unsupported: exposing this
-mode there requires an explicit platform contract rather than silently accepting
-and ignoring image. See the
+not an OCI image or equivalent host confinement. The default native SDK table still refuses these operations. Explicit client
+registration above exposes native mount/status/Published Commit/normal unmount,
+not container creation or Bash Exec; image is null and the native mode is named
+rather than silently accepting and ignoring an image. See the
 [resident-instance implementation proof](../../core/docs/issues/352/WINDOWS-NATIVE-INSTANCE-2026-11-02.md).
 
 ### Trusted host commands in a native mount
