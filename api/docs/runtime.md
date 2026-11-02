@@ -144,9 +144,13 @@ automatic retry. Lost/unknown protocol outcomes retain custody without recovery.
 
 Only zero actual owners/requests and completed callbacks permit the original
 clean/discard prepare, native stop/join/detach, product finish and process receipt.
-This covers the pinned minimal Git object workload and read-only-view refusal,
-not arbitrary kernel references, writable mappings, forced teardown or the prior
-full Git workload. See the [coordinated-close evidence](../../core/docs/issues/352/WINDOWS-NATIVE-CLOSE-2026-11-03.md).
+Functional evidence covers the pinned minimal Git object workload, isolated
+read-only-view refusal and a trusted-local Git roundtrip with two publications,
+two byte-exact remounts and three direct normal unmounts. It does not qualify
+arbitrary kernel references, writable mappings, forced teardown, the previous
+full Git workload or restricted Git cwd compatibility. See the
+[coordinated-close evidence](../../core/docs/issues/352/WINDOWS-NATIVE-CLOSE-2026-11-03.md)
+and [focused Git roundtrip](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-ROUNDTRIP-2026-11-03.md).
 
 Only a correctly correlated terminal acknowledgement **and** the original parent
 process's successful close resolve `unmount()`. The result includes string command
