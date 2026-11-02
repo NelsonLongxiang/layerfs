@@ -2,6 +2,46 @@
 
 > **Status:** Current general guide.
 
+## Per-mount Windows callback adapter (2026-11-02)
+
+[WorkspaceCallbacks](../../../engine/crates/layerfs-fuse/src/windows/callbacks.hpp)
+now supplies the concrete WinFsp filesystem callback table over the existing
+[WorkspacePort](../../../engine/crates/layerfs-fuse/src/windows/workspace_port.hpp)
+ABI. Its [callbacks](../../../engine/crates/layerfs-fuse/src/windows/callbacks.cpp)
+serve file/directory open, create, read, bounded write, resize, attributes, rename,
+delete checks, independent Cleanup/Close and paged directory names. The immutable
+port is copied per mount; filesystem semantics and exact failure custody remain in
+the existing Workspace provider, not a second native filesystem implementation.
+Read/directory reply lengths and offset addition are checked before further use.
+
+[Metadata and security](../../../engine/crates/layerfs-fuse/src/windows/metadata.cpp)
+convert the existing portable identity/mode/time/Windows flags and build a current
+process-owner security descriptor. The caller supplies the volume observation;
+the diagnostic's 1 GiB values are synthetic, not product free-space guarantees.
+This preserves the existing scope: readonly maps mode, H/S/A are persisted, other
+security writes/allocation requests remain unsupported. It is not full ACL,
+symlink/hardlink, arbitrary Win32 name or timestamp-precision qualification.
+
+Each adapter holds a copied table, independent security descriptor, first
+non-repliable callback failure, provider lifetime and optional synchronous
+noexcept observer. Observer events are actual callback observations, not admission
+or a request replay channel. The diagnostic retains its test counters/cache logs;
+no diagnostic selector or output transport is built into the product callbacks.
+The callback context is pinned in WinFspMount's heap State, and that stable State
+is installed in FSP_FILE_SYSTEM::UserContext before mount/start. Directory packing
+also resolves its WinFsp helper through that same native State, not a global owner.
+
+The caller supplies a shared provider owner covering every function address and
+its backing; the host pins its loaded Rust module. Dropping the adapter facade
+and its caller's provider reference does not end callbacks: native State retains
+them until native drain/detach and acknowledged logical Close allow explicit
+release_library. Failed partial attach retains the State and callback/provider
+with it; destruction does not guess safe disposal. No thread/timeout/window count
+is used to infer that provider consumers are gone. Caller-owned observer code must
+likewise outlive callback service. The ABI provider's current singleton Rust
+Session is still diagnostic: independent adapter contexts do not establish several
+same-process provider Sessions, SDK registration, IPC or product Workspace Ready.
+
 ## Windows WinFsp connection owner (2026-11-02)
 
 [WinFspMount](../../../engine/crates/layerfs-fuse/src/windows/mount.hpp) is a

@@ -16,6 +16,7 @@ struct WinFspMount::State {
   HANDLE probe = INVALID_HANDLE_VALUE;
   std::wstring directory;
   FSP_FILE_SYSTEM_INTERFACE callbacks{};
+  std::shared_ptr<void> context;
   FSP_FSCTL_VOLUME_PARAMS params{};
   decltype(&FspFileSystemCreate) create = nullptr;
   decltype(&FspFileSystemDelete) destroy = nullptr;
@@ -60,7 +61,8 @@ static bool absolute(PCWSTR path) {
 NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
                              const FSP_FSCTL_VOLUME_PARAMS &params,
                              const FSP_FILE_SYSTEM_INTERFACE &callbacks,
-                             UINT64 root_serial) {
+                             UINT64 root_serial,
+                             std::shared_ptr<void> context) {
   auto &s = *state_;
   if (s.attempted)
     return STATUS_INVALID_DEVICE_STATE;
@@ -75,6 +77,7 @@ NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
     return fail("directory", STATUS_OBJECT_PATH_NOT_FOUND, error);
   s.directory = directory;
   s.callbacks = callbacks;
+  s.context = std::move(context);
   s.params = params;
   s.library = LoadLibraryExW(library, nullptr,
                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
@@ -100,6 +103,7 @@ NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
                          &s.callbacks, &s.filesystem);
   if (status < 0)
     return fail("create", status);
+  s.filesystem->UserContext = &s;
   s.phase = MountPhase::Created;
   status = s.mount(s.filesystem, s.directory.data());
   if (status < 0)
@@ -131,6 +135,15 @@ NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
     return fail("root-identity", STATUS_INVALID_PARAMETER);
   s.phase = MountPhase::RootServed;
   return STATUS_SUCCESS;
+}
+void *WinFspMount::callback_context(FSP_FILE_SYSTEM *fs) {
+  return static_cast<State *>(fs->UserContext)->context.get();
+}
+BOOLEAN WinFspMount::add_dir_info(FSP_FILE_SYSTEM *fs, FSP_FSCTL_DIR_INFO *info,
+                                  PVOID buffer, ULONG capacity,
+                                  PULONG transferred) {
+  auto &s = *static_cast<State *>(fs->UserContext);
+  return s.add(info, buffer, capacity, transferred);
 }
 BOOLEAN WinFspMount::add_dir_info(FSP_FSCTL_DIR_INFO *info, PVOID buffer,
                                   ULONG capacity, PULONG transferred) const {
@@ -173,6 +186,7 @@ NTSTATUS WinFspMount::release_library() {
   if (!FreeLibrary(s.library))
     return fail("library-close", STATUS_UNSUCCESSFUL, GetLastError());
   s.library = nullptr;
+  s.context.reset();
   s.phase = MountPhase::Closed;
   return STATUS_SUCCESS;
 }

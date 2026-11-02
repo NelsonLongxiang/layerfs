@@ -659,3 +659,26 @@ reports Ready. Both native implementation and header count as product LOC and ar
 covered by the source guard. SDK mount/status/Commit/unmount and Sandbox registration
 are unchanged; this product component is consumed by a non-shipped diagnostic.
 See the [mount owner result](../../core/docs/issues/352/WINDOWS-MOUNT-OWNER-2026-11-02.md).
+
+## Product WinFsp callbacks and provider custody
+
+Filesystem callbacks, portable metadata conversion, directory packing and the
+current-process owner security descriptor now live in layerfs-fuse's native
+Windows source. This host only supplies the existing Workspace ABI, synthetic
+volume observation and diagnostic observer/control. It no longer owns a second
+callback implementation. The real native build links mount.cpp, callbacks.cpp and
+metadata.cpp as separate product translation units; all headers/source are counted.
+
+The product mount State pins each callback context/provider and is set as WinFsp
+UserContext before service starts. The host deliberately drops its adapter facade
+and its independent provider reference after attach. Actual I/O must still work,
+and weak references expire only after native drain, logical Close and explicit
+library release. A failed partial attach keeps the context/provider instead of
+unloading code behind live callbacks. Direct tests use the public adapter and real
+provider DLL, not a product test hook or fake filesystem.
+
+Existing metadata/access limits and mapping publication gaps remain. WorkspacePort
+still reaches a diagnostic Rust Session; multiple per-mount adapter contexts do not
+prove a multi-Session product process, Sandbox isolation or SDK mounting support.
+The native test build accepts -CallbackTests for direct conversion/setup/lifetime
+checks. See the [callback adapter result](../../core/docs/issues/352/WINDOWS-CALLBACK-ADAPTER-2026-11-02.md).
