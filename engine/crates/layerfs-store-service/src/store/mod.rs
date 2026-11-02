@@ -6,6 +6,7 @@ pub mod commit_merge;
 pub mod commit_types;
 pub mod digests;
 pub mod hints;
+pub mod kernel_lookup;
 pub mod open;
 pub mod operation;
 pub mod ports;
@@ -20,6 +21,7 @@ pub use bind::checked_base;
 pub use commit_merge::{Stale, StaleError, LANE_MERGE_PATHS};
 pub use hints::record_new_bindings;
 pub use hints::CatalogHints;
+pub use kernel_lookup::{KernelLookup, KernelLookupCause, KernelLookupFailure};
 
 pub use commit_types::{
     CapturedConstruction, CommitError, CommitFailure, CommitOptions, CommitPhase, CommitSuccess,

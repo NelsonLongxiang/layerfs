@@ -574,3 +574,22 @@ Unlinked, writable, metadata-writable, delete/control or active-directory owners
 refuse coordination. This does not establish complete section inventory, generic
 mapping synchronization, crash recovery, or product SDK Windows Workspace support.
 See the [coordinated-close result](../../core/docs/issues/352/WINFSP-COORDINATED-CLOSE-2026-11-02.md).
+
+## Product lookup composition
+
+Native name lookup now calls StoreOperation::kernel_lookup from layerfs-store-service
+rather than owning another Needs/fact-supply loop. The product port performs the
+existing atomic Workspace visits and reads requested immutable facts outside the
+Overlay lock. Positive receipts retain original observation and operation scope;
+lookup reference release remains the adapter's explicit kernel forget. Failures
+preserve original boundary/observation/provider custody. A definitive Refused
+observation maps to its native status; other failures are kept in Session and stop
+new admission and normal close instead of being reduced to a lost error string.
+
+The Windows [direct product-port tests](tests/product_kernel_lookup.rs) use the real
+StoreService independently of diagnostic Session to cover reference ownership,
+missing/not-directory refusals, foreign and revoked mounts and a healthy sibling
+Workspace. They create only synthetic Stores via the existing test fixture. This
+step does not remove the SDK's Windows Workspace refusal, start a Sandbox or add a
+product dependency on this diagnostic. See the
+[product lookup result](../../core/docs/issues/352/WINDOWS-PRODUCT-LOOKUP-2026-11-02.md).

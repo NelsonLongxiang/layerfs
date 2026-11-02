@@ -19,8 +19,7 @@ use layerfs_store_service::{
     StoreService,
 };
 use layerfs_workspace::{
-    KernelReadDecision, KernelReadOperation, Operation, Position, ViewStat, VisitFacts,
-    WorkspaceError,
+    KernelReadDecision, Operation, Position, ViewStat, VisitFacts, WorkspaceError,
 };
 use std::{
     collections::BTreeMap,
@@ -160,6 +159,7 @@ pub struct Session {
     retained_completions: Vec<CommitCompletion>,
     retained_commit: Option<Box<CommitFailure>>,
     retained_success: Option<Box<layerfs_store_service::store::CommitSuccess>>,
+    retained_lookup: Option<Box<layerfs_store_service::store::KernelLookupFailure>>,
 }
 impl Session {
     pub fn create(path: &Path) -> Result<Self> {
@@ -246,6 +246,7 @@ impl Session {
             retained_completions: Vec::new(),
             retained_commit: None,
             retained_success: None,
+            retained_lookup: None,
         })
     }
     fn sequence(&mut self) -> Result<u64> {
@@ -317,7 +318,7 @@ impl Session {
                 .map_err(workspace_error)
         })
     }
-    fn reference(&self, path: &str) -> Result<Inode> {
+    fn reference(&mut self, path: &str) -> Result<Inode> {
         let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
         let op = self.bound.operation().map_err(workspace_error)?;
         let mut parent = self.root;
@@ -349,42 +350,17 @@ impl Session {
         }
         Err(refused(0xc000000d, "root needs no lookup"))
     }
-    fn reference_child(&self, parent: u64, name: PathName) -> Result<Inode> {
+    fn reference_child(&mut self, parent: u64, name: PathName) -> Result<Inode> {
         let op = self.bound.operation().map_err(workspace_error)?;
-        let mut facts = VisitFacts::default();
-        loop {
-            let visit = op
-                .workspace()
-                .kernel_read_visit(
-                    op.resident(),
-                    self.mount,
-                    parent,
-                    None,
-                    KernelReadOperation::Lookup {
-                        parent,
-                        name: name.clone(),
-                    },
-                    Arc::new(facts.clone()),
-                )
-                .map_err(workspace_error)?;
-            let observed = op
-                .overlay()
-                .kernel_observe_visit(self.bound.route(), Box::new(visit))
-                .map_err(failed)?;
-            observed.result.as_ref().map_err(failed)?;
-            match observed.decision.as_ref() {
-                Some(KernelReadDecision::Value(inode)) => return Ok(inode.clone()),
-                Some(KernelReadDecision::Needs(needs)) => facts
-                    .supply(
-                        &op.workspace().base().map_err(workspace_error)?,
-                        needs,
-                        None,
-                    )
-                    .map_err(workspace_error)?,
-                Some(KernelReadDecision::Refused(r)) => {
-                    return Err(workspace_error(WorkspaceError::Refused(*r)))
+        match op.kernel_lookup(self.mount, parent, name) {
+            Ok(value) => Ok(value.inode.clone()),
+            Err(failure) => {
+                if let Some(refusal) = failure.refusal() {
+                    return Err(workspace_error(WorkspaceError::Refused(refusal)));
                 }
-                other => return Err(failed(format!("lookup outcome {other:?}"))),
+                let error = failed(&failure);
+                self.retained_lookup = Some(failure);
+                Err(error)
             }
         }
     }

@@ -3,6 +3,31 @@
 > **Status:** Implemented R2 component on parent78374ced6,2026-10-08.
 > Native Fuse activation, Ready and normal drain remain open.
 
+
+## Store-backed kernel lookup composition (2026-11-02)
+
+[StoreOperation::kernel_lookup](../../../engine/crates/layerfs-store-service/src/store/kernel_lookup.rs)
+now composes one component lookup beneath a parent the supplied KernelMount already
+references. Each deciding owner visit is the existing atomic Workspace/Overlay
+lookup. A Needs observation changes nothing: the operation supplies scoped immutable
+facts outside the Overlay lock, then continues the semantic evaluation. Failed or
+uncertain visits are never replayed. No native-path parsing, permission policy,
+second encoder, kernel attachment or SDK mount is added by this composition.
+
+A positive KernelLookup holds the exact original observation and its StoreOperation
+provider/backing scope. One lookup reference was acquired atomically; dropping the
+receipt does not forget it. The kernel adapter remains responsible for explicit
+FORGET and the independent open/directory lifetime. KernelLookupFailure keeps mount,
+parent, name, the original failing boundary, the last observation when present,
+and the operation scope. Only an Ok observation with a Refused decision establishes
+a definite semantic refusal. A deciding value beside a failed transaction is not
+permission to return success or guess compensation.
+
+The Windows diagnostic consumer uses this product port instead of its duplicate
+fact-supply loop. Nonsemantic failures remain stored in its Session and fence later
+admission and normal close. This component reuse is not production Windows Workspace
+mount/status/Commit/unmount integration; the SDK still refuses that family.
+
 **Contract for anything that collects Store objects or releases a base
 root (owner decision 2026-10-09).** An in-flight READ, READLINK, OPEN or
 directory read holds no `base_readers` count and no SQL custody row. Between

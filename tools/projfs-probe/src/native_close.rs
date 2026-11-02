@@ -12,6 +12,11 @@ pub struct CloseState {
 }
 impl Session {
     pub(super) fn accepting(&self) -> Result<()> {
+        if self.retained_lookup.is_some() {
+            return Err(failed(
+                "original kernel lookup failure retained; no further admission",
+            ));
+        }
         if self.closing {
             return Err(refused(
                 0x80000011,
@@ -37,7 +42,8 @@ impl Session {
             retained: u32::from(
                 self.retained_commit.is_some()
                     || self.retained_success.is_some()
-                    || !self.retained_completions.is_empty(),
+                    || !self.retained_completions.is_empty()
+                    || self.retained_lookup.is_some(),
             ),
             prepared: u32::from(self.closing),
         }
