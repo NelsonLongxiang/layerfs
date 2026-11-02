@@ -8,6 +8,7 @@ import {join, resolve, relative} from 'node:path';
 assert.equal(process.platform, 'win32');
 assert.equal(process.argv.length, 8);
 const [host, dll, bridge, checker, git, out] = process.argv.slice(2).map(p => resolve(p));
+const coordinatedClose = process.env.LAYERFS_NATIVE_COORDINATED_CLOSE === '1';
 assert.ok(!existsSync(out), 'fresh output required');
 mkdirSync(out, {recursive: true});
 const sha = b => createHash('sha256').update(b).digest('hex');
@@ -166,9 +167,13 @@ async function commit(p, index) {
   await phase(p, 'binding-committed-' + index);
 }
 async function close(p) {
-  mark(p, 'close-inspect');
-  await phase(p, 'close-idle');
-  mark(p, 'stop');
+  if (coordinatedClose) {
+    mark(p, 'stop-coordinate');
+  } else {
+    mark(p, 'close-inspect');
+    await phase(p, 'close-idle');
+    mark(p, 'stop');
+  }
   const r = await p.ended;
   assert.equal(r.exit?.code, 0, r.stdout + r.stderr);
   assert.equal(r.exit?.signal, null);
@@ -231,8 +236,9 @@ try {
   const b = launch('second');
   await phase(b, 'ready');
   const rebound = join(b.mount, 'repo');
-  assert.deepEqual(
-      manifest(rebound), before, 'all Git/ignored bytes must survive LayerFS Commit and remount');
+  const after = manifest(rebound);
+  writeFileSync(join(out, 'after.json'), JSON.stringify(after, null, 2));
+  assert.deepEqual(after, before, 'all Git/ignored bytes must survive LayerFS Commit and remount');
   checkpoints.remount_bytes_exact = true;
   assert.equal(gitRun(rebound, 'rev-parse', 'HEAD').trim(), second);
   assert.equal(gitRun(rebound, 'rev-parse', 'HEAD^').trim(), first);
@@ -291,6 +297,7 @@ try {
       JSON.stringify(
           {
             status: failure ? 'FAIL' : 'PASS',
+            coordinated_close: coordinatedClose,
             identity,
             failure,
             checkpoints,

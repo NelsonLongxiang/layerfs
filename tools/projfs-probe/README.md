@@ -526,3 +526,51 @@ work; the caller issues no explicit flush, notification or forced Unmap. No auto
 reopen sweep is installed in normal close. General-close qualification stays false,
 and the original Git full-lifecycle FAIL remains until independently fixed and rerun.
 See the [reopen coordination result](../../core/docs/issues/352/WINFSP-READONLY-REOPEN-2026-11-02.md).
+
+## Explicit identity-checked coordinated close
+
+The native host now accepts `stop-coordinate` as a separate explicit terminal
+request. The existing `stop` path is unchanged: it refuses owned references before
+effects and does not silently select the new operation. A Busy coordination request
+is consumed once; an owner may release its view and issue a distinct
+`stop-coordinate-after-release` request. No candidate is reopened in a retry loop.
+
+Session records Cleanup independently from Close and keeps a path hint only while
+it names a known handle. Admission requires all remaining handles to be cleaned,
+named readonly files, with no Commit/capture/unknown custody. A request token fences
+name changes, new write/delete/control opens, ordinary mutations and capture/Commit
+while allowing reads and actual Cleanup/Close. Candidates stream by original token
+up to the request's fixed upper cursor; new readonly opens are not added to the pass.
+Rename updates open-handle hints by path component, and unlink/replacement invalidates
+the displaced owner's hint. This costs a linear pass over open state, not a whole
+namespace scan; large-open-state latency is not qualified by these small fixtures.
+
+For each candidate Session resolves its current name and serial while the name
+admission is held. Outside the Session mutex, the host opens read-only, checks the
+native volume marker and index against that serial, rejects reparse/directory data,
+reads at most one byte and closes the temporary handle. It never releases the original
+Rust owner. Only real Close callbacks can remove original tokens. Readiness remains
+bounded to ten seconds; Busy restores the reversible admission without detach.
+Successful completion atomically prepares terminal close and then uses the existing
+stop/drain/detach/Overlay-close path. The ten-second budget is not a cancellation or
+latency guarantee for individual synchronous Windows calls.
+
+```powershell
+node tools/winfsp-coordinate-test.mjs <host> <installed-WinFsp-dll> <Rust-dll> <client> <fresh-output>
+node tools/winfsp-coordinate-test.mjs --self-test <fresh-output>/result.json
+# Explicitly choose this host operation for the ordinary Git workload:
+$env:LAYERFS_NATIVE_COORDINATED_CLOSE = '1'
+node tools/winfsp-git-test.mjs <host> <installed-WinFsp-dll> <Rust-dll> <client> <git-exe> <fresh-output>
+```
+
+The ordinary Git workload now passes with this explicitly selected close path,
+including both normal provider exits and independently saved before/after file
+manifests. The historical default-close FAIL and verifier snapshots stay unchanged.
+Kernel tests also cover a live readonly view retaining Busy and readable I/O, and a
+directory rename followed by a replacement at the old path. A mapped-source delete
+returns EPERM in this WinFsp setup; that refusal is not successful-unlink coverage.
+Unlink/replacement invalidation is separately covered through the Rust public port.
+Unlinked, writable, metadata-writable, delete/control or active-directory owners still
+refuse coordination. This does not establish complete section inventory, generic
+mapping synchronization, crash recovery, or product SDK Windows Workspace support.
+See the [coordinated-close result](../../core/docs/issues/352/WINFSP-COORDINATED-CLOSE-2026-11-02.md).

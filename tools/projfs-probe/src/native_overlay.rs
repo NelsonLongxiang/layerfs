@@ -7,6 +7,8 @@ mod commit;
 pub use commit::{CommitCompletion, CommitWork};
 #[path = "native_close.rs"]
 mod close;
+#[path = "native_coordination.rs"]
+mod coordination;
 #[path = "native_metadata.rs"]
 mod metadata;
 pub use close::CloseState;
@@ -135,6 +137,9 @@ struct Handle {
     lookup: bool,
     data_writable: bool,
     attributes_writable: bool,
+    delete_access: bool,
+    cleaned: bool,
+    path: Option<String>,
 }
 pub struct Session {
     service: Option<StoreService>,
@@ -151,6 +156,7 @@ pub struct Session {
     pending_commit: Option<u64>,
     closing: bool,
     finish_started: bool,
+    coordinating: Option<u64>,
     retained_completions: Vec<CommitCompletion>,
     retained_commit: Option<Box<CommitFailure>>,
     retained_success: Option<Box<layerfs_store_service::store::CommitSuccess>>,
@@ -236,6 +242,7 @@ impl Session {
             pending_commit: None,
             closing: false,
             finish_started: false,
+            coordinating: None,
             retained_completions: Vec::new(),
             retained_commit: None,
             retained_success: None,
@@ -384,12 +391,15 @@ impl Session {
     pub fn open(&mut self, path: &str, writable: bool) -> Result<(u64, Stat)> {
         self.open_access(path, writable, writable)
     }
-    pub fn open_access(
-        &mut self,
-        path: &str,
-        data_writable: bool,
-        attributes_writable: bool,
-    ) -> Result<(u64, Stat)> {
+    pub fn open_windows(&mut self, path: &str, access: u32) -> Result<(u64, Stat)> {
+        if access & !7 != 0 {
+            return Err(refused(0xc000000d, "invalid native access"));
+        }
+        if access != 0 {
+            self.namespace_admission()?;
+        }
+        let data_writable = access & 1 != 0;
+        let attributes_writable = access & 2 != 0;
         validate(path)?;
         let stat = self.stat_path(path)?;
         let lookup = path != "/";
@@ -436,6 +446,9 @@ impl Session {
                         lookup,
                         data_writable,
                         attributes_writable,
+                        delete_access: access & 4 != 0,
+                        cleaned: false,
+                        path: Some(path.to_owned()),
                     })
                 }
                 Some(KernelReadDecision::Needs(needs)) => facts
@@ -483,6 +496,7 @@ impl Session {
         attributes_writable: bool,
     ) -> Result<(u64, Stat)> {
         validate(path)?;
+        self.namespace_admission()?;
         if attributes & !0xb7 != 0 || attributes & 0x10 != 0 && !directory {
             return Err(refused(0xc00000bb, "unrepresented creation attributes"));
         }
@@ -545,6 +559,9 @@ impl Session {
         append: bool,
         cached: bool,
     ) -> Result<Stat> {
+        if !cached {
+            self.namespace_admission()?;
+        }
         if bytes.len() > layerfs_overlay::WRITE_WINDOW {
             return Err(refused(0xc000000d, "write window"));
         }
@@ -578,6 +595,7 @@ impl Session {
         self.stat_handle(handle)
     }
     pub fn resize(&mut self, handle: u64, size: u64) -> Result<Stat> {
+        self.namespace_admission()?;
         let file = self
             .handles
             .get(&handle)
@@ -601,6 +619,7 @@ impl Session {
         self.stat_handle(handle)
     }
     pub fn rename(&mut self, from: &str, to: &str, replace: bool) -> Result<()> {
+        self.namespace_admission()?;
         validate(from)?;
         validate(to)?;
         if from == "/" || to == "/" {
@@ -631,10 +650,12 @@ impl Session {
                 .map(|_| ()),
             )
         })?;
+        self.renamed_hints(from, to);
         self.publications += 1;
         Ok(())
     }
     pub fn can_delete(&self, path: &str) -> Result<()> {
+        self.namespace_admission()?;
         validate(path)?;
         if path == "/" {
             return Err(refused(0xc0000022, "cannot delete root"));
@@ -664,6 +685,7 @@ impl Session {
         })
     }
     pub fn unlink(&mut self, path: &str) -> Result<()> {
+        self.namespace_admission()?;
         validate(path)?;
         if path == "/" {
             return Err(refused(0xc0000022, "cannot delete root"));
@@ -679,6 +701,7 @@ impl Session {
                 };
             mutation_error(m.apply(operation).map(|_| ()))
         })?;
+        self.unlinked_hints(path);
         self.publications += 1;
         Ok(())
     }
@@ -787,7 +810,7 @@ impl Session {
         }
     }
     pub fn capture(&mut self) -> Result<()> {
-        self.accepting()?;
+        self.namespace_admission()?;
         if self.pending_commit.is_some() {
             return Err(refused(0x80000011, "Commit already admitted"));
         }

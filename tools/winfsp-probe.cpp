@@ -7,6 +7,7 @@
 #include <cwchar>
 #include <atomic>
 #include <thread>
+#include <string>
 #include <winfsp/winfsp.h>
 #include <sddl.h>
 struct Api {
@@ -68,12 +69,18 @@ struct Bridge {
   INT32(__cdecl *observe)() = nullptr;
   INT32(__cdecl *close_state)(CloseState *) = nullptr;
   INT32(__cdecl *prepare_close)() = nullptr;
+  INT32(__cdecl *cleanup)(UINT64) = nullptr;
+  INT32(__cdecl *coordinate_begin)(UINT64 *) = nullptr;
+  INT32(__cdecl *coordinate_next)
+  (UINT64, UINT64, UINT64 *, UINT64 *, PWSTR, UINT32, UINT32 *) = nullptr;
+  INT32(__cdecl *coordinate_end)(UINT64, UINT32) = nullptr;
   INT32(__cdecl *finish)() = nullptr;
 } bridge;
 static PSECURITY_DESCRIPTOR security = nullptr;
 static volatile LONG creates = 0, opens = 0, reads = 0, writes = 0, renames = 0,
                      cleanups = 0, closes = 0, deletes = 0, callback_error = 0;
 static volatile LONG ordinary_writes = 0, constrained_writes = 0;
+static volatile LONG active_close_callbacks = 0;
 static bool cache_mode = false;
 static bool trace_handles = false;
 static volatile LONG trace_events = 0;
@@ -166,11 +173,13 @@ static NTSTATUS open_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32, UINT32 access,
                           PVOID *ctx, FSP_FSCTL_FILE_INFO *info) {
   Stat stat{};
   UINT64 held = 0;
-  auto status =
-      bridge.open(name, length(name), 0,
-                  ((access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) ? 1u : 0u) |
-                      ((access & FILE_WRITE_ATTRIBUTES) ? 2u : 0u),
-                  &held, &stat);
+  auto status = bridge.open(
+      name, length(name), 0,
+      ((access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) ? 1u : 0u) |
+          ((access & FILE_WRITE_ATTRIBUTES) ? 2u : 0u) |
+          ((access & (DELETE | WRITE_DAC | WRITE_OWNER | FILE_WRITE_EA)) ? 4u
+                                                                         : 0u),
+      &held, &stat);
   if (status < 0)
     return status;
   auto full = reinterpret_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx);
@@ -192,7 +201,9 @@ static NTSTATUS create_file(FSP_FILE_SYSTEM *, PWSTR name, UINT32 options,
   auto status = bridge.create(
       name, length(name), (options & FILE_DIRECTORY_FILE) ? 1u : 0u,
       ((access & (FILE_WRITE_DATA | FILE_APPEND_DATA)) ? 1u : 0u) |
-          ((access & FILE_WRITE_ATTRIBUTES) ? 2u : 0u),
+          ((access & FILE_WRITE_ATTRIBUTES) ? 2u : 0u) |
+          ((access & (DELETE | WRITE_DAC | WRITE_OWNER | FILE_WRITE_EA)) ? 4u
+                                                                         : 0u),
       attributes, &held, &stat);
   if (status < 0)
     return status;
@@ -230,6 +241,10 @@ static VOID cleanup(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR name, ULONG flags) {
     } else
       InterlockedIncrement(&deletes);
   }
+  if (bridge.cleanup(handle(ctx)) < 0) {
+    InterlockedExchange(&callback_error, 1);
+    fprintf(stderr, "OVERLAY_CLEANUP_TRACK_FAIL\n");
+  }
   if (cache_mode) {
     printf("CACHE_CLEANUP handle=%llu flags=%lu closes=%ld\n", handle(ctx),
            flags, closes);
@@ -238,6 +253,7 @@ static VOID cleanup(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR name, ULONG flags) {
   // Keep Rust OpenFile/KernelDirectory until Close, not Cleanup.
 }
 static VOID close_file(FSP_FILE_SYSTEM *, PVOID ctx) {
+  InterlockedIncrement(&active_close_callbacks);
   auto status = bridge.close(handle(ctx));
   if (status < 0) {
     InterlockedExchange(&callback_error, 1);
@@ -251,6 +267,7 @@ static VOID close_file(FSP_FILE_SYSTEM *, PVOID ctx) {
     printf("CACHE_CLOSE handle=%llu cleanup=%ld\n", handle(ctx), cleanups);
     fflush(stdout);
   }
+  InterlockedDecrement(&active_close_callbacks);
 }
 static NTSTATUS read_file(FSP_FILE_SYSTEM *, PVOID ctx, PVOID buffer,
                           UINT64 offset, ULONG size, PULONG count) {
@@ -465,6 +482,101 @@ static bool exists(PCWSTR root, PCWSTR phase) {
   swprintf_s(path, L"%s\\%s", root, phase);
   return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
 }
+// One explicit request, streamed by original token. No Session mutex is held
+// across a filesystem call, and no Rust descriptor is released here.
+static NTSTATUS coordinate_close(PCWSTR mount) {
+  UINT64 token = 0;
+  auto status = bridge.coordinate_begin(&token);
+  printf("CLOSE_COORDINATE_BEGIN token=%llu status=%08lx\n", token,
+         static_cast<ULONG>(status));
+  fflush(stdout);
+  if (status < 0)
+    return status;
+  const auto deadline = GetTickCount64() + 10000;
+  auto abort = [&](NTSTATUS reason) {
+    auto end = bridge.coordinate_end(token, 0);
+    printf("CLOSE_COORDINATE_ABORT token=%llu status=%08lx "
+           "admission_restored=%s\n",
+           token, static_cast<ULONG>(reason), end >= 0 ? "true" : "false");
+    fflush(stdout);
+    return end < 0 ? end : reason;
+  };
+  UINT64 after = 0;
+  for (;;) {
+    WCHAR name[32768]{};
+    UINT64 held = 0, serial = 0;
+    UINT32 count = 0;
+    status = bridge.coordinate_next(token, after, &held, &serial, name, 32768,
+                                    &count);
+    if (status < 0)
+      return abort(status);
+    if (!count)
+      break;
+    if (GetTickCount64() >= deadline)
+      return abort(STATUS_DEVICE_BUSY);
+    std::wstring full = mount;
+    for (UINT32 i = 0; i < count; ++i)
+      full += name[i] == L'/' ? L'\\' : name[i];
+    if (full.size() >= 32768)
+      return abort(STATUS_DEVICE_BUSY);
+    HANDLE file = CreateFileW(
+        full.c_str(), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+      printf("CLOSE_COORDINATE_OPEN_REFUSED original=%llu win32=%lu\n", held,
+             GetLastError());
+      return abort(STATUS_DEVICE_BUSY);
+    }
+    BY_HANDLE_FILE_INFORMATION info{};
+    bool matched =
+        GetFileInformationByHandle(file, &info) != FALSE &&
+        info.dwVolumeSerialNumber == 0x4c465350 &&
+        ((UINT64(info.nFileIndexHigh) << 32) | info.nFileIndexLow) == serial &&
+        !(info.dwFileAttributes &
+          (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT));
+    BYTE byte = 0;
+    DWORD got = 0;
+    bool read = matched && ReadFile(file, &byte, 1, &got, nullptr) != FALSE;
+    bool closed = CloseHandle(file) != FALSE;
+    printf("CLOSE_COORDINATE_VISIT token=%llu original=%llu serial=%llu "
+           "identity=%s read=%s closed=%s\n",
+           token, held, serial, matched ? "true" : "false",
+           read ? "true" : "false", closed ? "true" : "false");
+    fflush(stdout);
+    if (!matched || !read || !closed)
+      return abort(STATUS_DEVICE_BUSY);
+    after = held;
+  }
+  for (;;) {
+    CloseState state{};
+    status = bridge.close_state(&state);
+    if (status < 0)
+      return abort(status);
+    if (!state.files && !state.directories &&
+        InterlockedCompareExchange(&active_close_callbacks, 0, 0) == 0)
+      break;
+    if (GetTickCount64() >= deadline)
+      return abort(STATUS_DEVICE_BUSY);
+    Sleep(
+        5); // Readiness only. No candidate is reopened or retried in this loop.
+  }
+  CloseState observed{};
+  if (bridge.close_state(&observed) < 0)
+    return abort(STATUS_DEVICE_BUSY);
+  printf(
+      "NORMAL_CLOSE_OBSERVED files=%llu directories=%llu commit=%u capture=%u "
+      "retained=%u prepared=%u cleanup=%ld close=%ld\n",
+      observed.files, observed.directories, observed.pending_commit,
+      observed.capture, observed.retained, observed.prepared, cleanups, closes);
+  fflush(stdout);
+  status = bridge.coordinate_end(token, 1);
+  printf(
+      "CLOSE_COORDINATE_END token=%llu status=%08lx real_close_receipts=true\n",
+      token, static_cast<ULONG>(status));
+  fflush(stdout);
+  return status;
+}
 int wmain(int argc, wchar_t **argv) {
   WCHAR trace[2]{};
   trace_handles =
@@ -541,6 +653,10 @@ int wmain(int argc, wchar_t **argv) {
   LOAD(bridge, observe, lf_observe);
   LOAD(bridge, close_state, lf_close_state);
   LOAD(bridge, prepare_close, lf_prepare_close);
+  LOAD(bridge, cleanup, lf_cleanup);
+  LOAD(bridge, coordinate_begin, lf_coordinate_begin);
+  LOAD(bridge, coordinate_next, lf_coordinate_next);
+  LOAD(bridge, coordinate_end, lf_coordinate_end);
   LOAD(bridge, finish, lf_finish);
 #undef LOAD
   WCHAR store[32768];
@@ -611,6 +727,7 @@ int wmain(int argc, wchar_t **argv) {
   unsigned close_phase = 0;
   unsigned binding_commits = 0;
   bool close_prepared = false, close_checked = false, idle_reported = false;
+  bool coordinate_second_checked = false;
   CloseState last_close_state{};
   bool have_close_state = false;
   std::thread commit_worker;
@@ -942,6 +1059,46 @@ int wmain(int argc, wchar_t **argv) {
         puts("NATIVE_COMMIT_UPTODATE_PASS new_commit=false");
         if (!mark(argv[3], L"committed-unchanged"))
           break;
+      }
+      if (!close_prepared && exists(argv[3], L"stop-coordinate")) {
+        // Consume each explicit request once, before its potentially blocking
+        // work. The external controller uses a distinct second request only
+        // after release.
+        if (!close_checked) {
+          close_checked = true;
+          auto admission = coordinate_close(argv[2]);
+          if (admission == STATUS_DEVICE_BUSY) {
+            puts("NORMAL_CLOSE_REFUSED request=coordinate service_kept=true");
+            fflush(stdout);
+            if (!mark(argv[3], L"coordinate-refused"))
+              break;
+          } else if (admission < 0) {
+            break;
+          } else {
+            close_prepared = true;
+            done = true;
+            break;
+          }
+        } else if (!coordinate_second_checked &&
+                   exists(argv[3], L"stop-coordinate-after-release")) {
+          coordinate_second_checked = true;
+          auto admission = coordinate_close(argv[2]);
+          if (admission == STATUS_DEVICE_BUSY) {
+            puts("NORMAL_CLOSE_REFUSED request=coordinate-after-release "
+                 "service_kept=true");
+            fflush(stdout);
+            if (!mark(argv[3], L"coordinate-after-release-refused"))
+              break;
+          } else if (admission < 0) {
+            fprintf(stderr, "normal coordinated close second request=%08lx\n",
+                    static_cast<ULONG>(admission));
+            break;
+          } else {
+            close_prepared = true;
+            done = true;
+            break;
+          }
+        }
       }
       if (!close_checked && exists(argv[3], L"stop")) {
         close_checked = true;

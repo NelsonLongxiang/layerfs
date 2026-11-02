@@ -165,7 +165,7 @@ pub unsafe extern "C" fn lf_open(
         }
         let name = unsafe { path(ptr, len) }?;
         let (h, stat) = match create {
-            0 => s.open_access(&name, writable & 1 != 0, writable & 2 != 0)?,
+            0 => s.open_windows(&name, writable)?,
             1 => s.create_file(&name)?,
             2 => s.create_directory(&name)?,
             _ => {
@@ -195,12 +195,11 @@ pub unsafe extern "C" fn lf_create(
         if handle.is_null() || out.is_null() {
             return Err(failed("null create output"));
         }
-        let (h, stat) = s.create_windows(
+        let (h, stat) = s.create_native(
             &unsafe { path(ptr, len) }?,
             directory != 0,
             attributes,
-            access & 1 != 0,
-            access & 2 != 0,
+            access,
         )?;
         unsafe {
             put(handle, h)?;
@@ -500,6 +499,60 @@ pub extern "C" fn lf_observe() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn lf_close_state(out: *mut CloseState) -> i32 {
     call(|s| unsafe { put(out, s.close_state()) })
+}
+#[no_mangle]
+pub extern "C" fn lf_cleanup(handle: u64) -> i32 {
+    call(|s| s.cleanup_file(handle))
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_coordinate_begin(token: *mut u64) -> i32 {
+    call(|s| {
+        if token.is_null() {
+            return Err(failed("null coordination token"));
+        }
+        let value = s.begin_close_coordination()?;
+        unsafe { put(token, value) }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn lf_coordinate_next(
+    token: u64,
+    after: u64,
+    handle: *mut u64,
+    serial: *mut u64,
+    name: *mut u16,
+    capacity: u32,
+    length: *mut u32,
+) -> i32 {
+    call(|s| {
+        if handle.is_null() || serial.is_null() || name.is_null() || length.is_null() {
+            return Err(failed("null coordination output"));
+        }
+        match s.next_close_candidate(token, after)? {
+            None => unsafe { put(length, 0) },
+            Some((id, inode, path)) => {
+                let wide: Vec<u16> = path.encode_utf16().collect();
+                if wide.len() >= capacity as usize {
+                    return Err(crate::native_overlay::refused(
+                        0x80000011,
+                        "coordination name capacity",
+                    ));
+                }
+                // Host owns the writable UTF16 span, including the terminal NUL.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(wide.as_ptr(), name, wide.len());
+                    name.add(wide.len()).write(0);
+                    put(handle, id)?;
+                    put(serial, inode)?;
+                    put(length, wide.len() as u32)
+                }
+            }
+        }
+    })
+}
+#[no_mangle]
+pub extern "C" fn lf_coordinate_end(token: u64, prepare: u32) -> i32 {
+    call(|s| s.end_close_coordination(token, prepare != 0))
 }
 #[no_mangle]
 pub extern "C" fn lf_prepare_close() -> i32 {

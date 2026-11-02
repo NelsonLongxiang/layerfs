@@ -46,6 +46,9 @@ impl Session {
     /// fences new work; the native host must then drain/stop before finish/revoke.
     pub fn prepare_close(&mut self) -> Result<()> {
         self.accepting()?;
+        if self.coordinating.is_some() {
+            return Err(refused(0x80000011, "close coordination still owned"));
+        }
         let state = self.close_state();
         if state.retained != 0 {
             return Err(failed("unknown outcome retained; no normal close"));

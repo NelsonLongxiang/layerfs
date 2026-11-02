@@ -8,7 +8,7 @@ impl Session {
         attributes: u32,
         replace: bool,
     ) -> Result<Stat> {
-        self.accepting()?;
+        self.namespace_admission()?;
         if attributes & !0xa7 != 0 {
             return Err(refused(0xc00000bb, "unsupported overwrite attributes"));
         }
@@ -36,7 +36,7 @@ impl Session {
         self.stat_handle(handle)
     }
     pub fn basic_info(&mut self, handle: u64, attributes: u32, times: [u64; 4]) -> Result<Stat> {
-        self.accepting()?;
+        self.namespace_admission()?;
         let [creation, access, write, change] = times;
         let current = self.stat_handle(handle)?;
         let h = self
