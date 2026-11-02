@@ -1,0 +1,24 @@
+// SDK dispatch only: independent local binding/control stand-ins, no native process.
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+import {PassThrough} from 'node:stream';
+import {mkdtempSync,readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+const fake=fileURLToPath(new URL('./fixture/fake-native.cjs',import.meta.url));
+Object.assign(process.env,{LAYERFS_NATIVE:fake,LAYERFS_HOME:'/fake/home',LAYERFS_STORE_PATH:'/fake/store.sqlite'});delete process.env.LAYERFS_WORKER_ENDPOINT;
+const {LayerFS}=await import('@layerfs/agent');const {bindClientControl}=await import('@layerfs/agent/internal');
+const trace=join(mkdtempSync(join(tmpdir(),'sdk-native-exec-trace-')),'trace.jsonl');process.env.LAYERFS_TRACE=trace;
+const native=createRequire(import.meta.url)(fake),shop=await LayerFS.open('example'),ws={sandbox:'1',path:'/w'};
+const command={mode:'windows-native',executable:'C:/native.exe',args:['','sensitive-command-argument'],env:{PRIVATE_FIELD:'sensitive-environment-value'}};
+const before=native.calls.length;await assert.rejects(shop.workspace.exec(ws,command),{code:'Unsupported'});await assert.rejects(shop.call('workspace.exec',{...ws,command}),{code:'Unsupported'});assert.equal(native.calls.length,before,'never serialize native objects to an unbound Store/worker transport');
+let calls=0;const stdin=new PassThrough(),stdout=new PassThrough(),stderr=new PassThrough();
+const original=Object.freeze({id:'original',pid:42,stdin,stdout,stderr,exited:Promise.resolve({exitCode:7,signal:null}),finished:Promise.resolve({exitCode:7}),cancel:()=>({requested:true})});
+bindClientControl(shop,{call:async(op,args)=>{calls++;assert.equal(op,'workspace.exec');assert.equal(args.command,command);return {value:original};},backendCall:async()=>{throw Error('unexpected backend');}});
+assert.equal(await shop.workspace.exec(ws,command),original,'return the exact owner, not a spread copy or spool result');assert.equal(calls,1);
+assert.equal(stdin.writableEnded,false);assert.equal(stdout.readableFlowing,null);assert.equal(stderr.readableFlowing,null);
+await assert.rejects(shop.workspace.exec(ws,command,'message'),{code:'InvalidInput'});await assert.rejects(shop.workspace.exec(ws,command,undefined,{stdout:new PassThrough()}),{code:'InvalidInput'});assert.equal(calls,1,'reject incompatible arguments before control dispatch');
+const lines=readFileSync(trace,'utf8').trim().split('\n').map(s=>JSON.parse(s));const started=lines.find(r=>r.method==='workspace.exec'&&r.ok);assert.equal(started.execution,'started');assert.equal(started.commandId,'original');assert.equal(started.pid,42);assert.deepEqual(started.args.command,{mode:'windows-native',args:2});assert.equal(started.exitCode,undefined);assert.equal(readFileSync(trace,'utf8').includes('sensitive-'),false);
+await shop.close();await assert.rejects(shop.workspace.exec(ws,command),{code:'InvalidInput'});assert.equal(calls,1);
+console.log('PASS native exec SDK dispatch: explicit binding only, exact handle, no implicit stdin/output/spool, incompatible options refused');

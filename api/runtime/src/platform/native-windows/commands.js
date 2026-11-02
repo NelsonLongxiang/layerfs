@@ -24,7 +24,7 @@ function inputs(executable, args, options) {
   if (typeof executable !== "string" || !isAbsolute(executable) || !/^[a-z]:[\\/]/i.test(executable) || executable.includes("\0")) throw bad("native exec requires an explicit absolute local executable");
   try { if (!lstatSync(executable).isFile()) throw new Error("not a file"); }
   catch { throw bad("native exec executable must be an existing regular file"); }
-  if (!Array.isArray(args) || args.some((s) => typeof s !== "string" || s.includes("\0"))) throw bad("native exec arguments must be strings without NUL");
+  if (!Array.isArray(args) || Array.from(args).some((s) => typeof s !== "string" || s.includes("\0"))) throw bad("native exec arguments must be strings without NUL");
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some((key) => key !== "env")) throw bad("native exec options are { env? }; no shell, cwd, timeout or automatic Commit");
   const env = {};
   // Do not inherit LayerFS deployment/capabilities, addon selection or arbitrary

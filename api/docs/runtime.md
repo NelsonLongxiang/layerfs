@@ -161,9 +161,9 @@ instance on those clients. project.list_sandboxes and sandbox.list_workspaces
 report it explicitly in that native mode. It is not a container-image creation:
 sandbox.create(image) stays Unsupported. workspace.exec’s Bash command contract,
 background process APIs, forced unmount, custom Commit message and force-Commit
-remain Unsupported. Use the existing explicit native Session command owner for
-trusted/restricted ordinary executables; the SDK registration does not pretend
-that Windows argument-vector execution is Bash.
+remain Unsupported. Explicit native command objects below delegate the original
+Session command owner; the SDK registration does not pretend that Windows
+argument-vector execution is Bash.
 
 workspace.mount requires that named original instance still running, uses its
 existing mount implementation and admits at most 16 original Workspace owners
@@ -205,6 +205,61 @@ Unknown, original frames and runtime ownership without resend, including an
 admission that never returned a Workspace to its SDK caller.
 
 See the [SDK native binding proof](../../core/docs/issues/352/WINDOWS-NATIVE-CLIENT-2026-11-02.md).
+
+### Explicit native SDK execution
+
+An explicitly native-bound local client may pass a tagged command object to the
+existing workspace.exec call. This is a separate native input/result contract,
+not an interpretation of the existing Bash string:
+
+```js
+const child = await client.workspace.exec(ws, {
+  mode: "windows-native",
+  executable: process.execPath, // explicit absolute local executable
+  args: ["-e", "process.stdin.pipe(process.stdout)"],
+  env: { CASE_VALUE: "explicit" }, // optional, no arbitrary host inheritance
+});
+// Start draining BOTH outputs before a writer can block on their backpressure.
+const outputs = Promise.all([consume(child.stdout), consume(child.stderr)]);
+child.stdin.end(inputBytes); // only the caller ends input
+const root = await child.exited;
+const completion = await child.finished;
+await outputs;
+```
+
+consume above is the caller’s byte-stream consumer, not a LayerFS output spool.
+The exact existing immutable command handle is returned after the original target
+start acknowledgement: id, pid, restricted, stdin, stdout, stderr, exited,
+finished and cancel(). Standard streams remain live Node streams with bounded
+processing windows and backpressure. No output decoding, total-output cap, auto
+stdin EOF, implicit Commit/unmount or default execution deadline is introduced.
+
+The object accepts only mode, executable, args and optional env. All execution
+selection is copied before awaiting the original resident status. Invalid values,
+sparse argv, unknown options, shell/cwd/deadline/image fields and case-duplicate
+environment names refuse before target creation. Native message/sinks/spool options
+do not apply and refuse rather than being silently ignored. Ordinary native input
+validation and environment filtering remain in the existing command owner.
+
+Unbound or worker clients refuse native command objects before serializing them to
+their binding. A native-bound client still refuses Bash strings; existing container
+Bash execution and its text/sink results stay unchanged. The layerfs CLI remains on
+that string contract. Native calls require the named original running instance and
+serving Workspace. They do not create or restart one or open another Store.
+
+Root exit, launcher close, output consumption and filesystem drain stay separate.
+Closing the SDK client does not end a returned command or revoke its cancellation
+handle. cancel() requests only the original root once; it does not terminate the
+filesystem or descendants. Abandoned/failed output retains Unknown and original
+command custody without replay, guessed cleanup or normal-close acknowledgement.
+
+Tracing records native args as mode plus argv count only, not executable code,
+argv content or env values. Successful call return is execution: "started", with
+commandId and pid. It is not command completion or exit0; the original exited and
+finished receipts remain authoritative.
+
+The native object form is an implemented opt-in shape, not an owner-ratified
+unified platform API. See the [functional execution record](../../core/docs/issues/352/WINDOWS-NATIVE-SDK-EXEC-2026-11-03.md).
 
 ### Resident native execution instances
 
@@ -317,7 +372,8 @@ capability variables and arbitrary host environment secrets are not automaticall
 forwarded. This is environment hygiene, **not isolation**: commands run as the
 caller's Windows user and can access everything that user can. No token lowering,
 image, Job object, AppContainer or Sandbox registration is claimed. Do not use
-this helper for untrusted code. SDK workspace.exec remains unsupported natively.
+this helper for untrusted code. SDK Bash strings remain unsupported natively;
+explicitly native-bound clients can use the tagged executable/argv form above.
 
 The runtime owns command launch, streams, exit and explicit root cancellation;
 its daemon never receives Exec control. Ordinary external processes need no Exec

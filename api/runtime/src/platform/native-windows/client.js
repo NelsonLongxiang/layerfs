@@ -56,6 +56,16 @@ export class NativeClientRoute {
       return { value: { items: [{ sandbox: this.#sandbox, name: this.#original.id, image: null, mode, workspaces: this.#owner.workspaces().filter((s) => s.observation().state !== "closed").length }] } };
     }
     if (op === "sandbox.create") throw new LayerFSError("Unsupported", "native SDK registration consumes an already-running instance; container image creation is unchanged", null);
+    if (op === "workspace.exec") {
+      const command = args.command;
+      if (typeof command === "string") throw new LayerFSError("Unsupported", "Bash strings are not Windows executable/argv commands; supply an explicit windows-native command object", null);
+      let input;
+      try { input = structuredClone(command); } // Snapshot before the instance-status await.
+      catch { throw new LayerFSError("InvalidInput", "native command fields must be copyable values", null); }
+      if (!input || typeof input !== "object" || Array.isArray(input) || input.mode !== "windows-native" || Object.keys(input).some((k) => !["mode", "executable", "args", "env"].includes(k))) throw new LayerFSError("InvalidInput", "native command is { mode: windows-native, executable, args, env? }; no shell, cwd or deadline", null);
+      if (args.message !== undefined || args.spool !== undefined || args.sinks !== undefined) throw new LayerFSError("InvalidInput", "native execution returns original stream handles; message, spool and sinks do not apply", null);
+      return { value: await this.#use(args, (session) => session.handle().exec(input.executable, input.args, input.env === undefined ? {} : { env: input.env })) };
+    }
     await this.#running(args.sandbox);
     if (op === "sandbox.close") return { value: { kind: "Closed", mode, ...await this.#original.close() } };
     if (op === "workspace.mount") {

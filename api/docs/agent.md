@@ -105,7 +105,7 @@ Linux they are served in this process). An integration may explicitly bind this
 open local client to its original running Windows native instance through
 [runtime.native.bindClient](runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
 That opt-in native subset serves mount/status/Published Commit/normal unmount
-with image null and mode windows-restricted; it does not change container-image
+and explicit executable/argv commands with image null and mode windows-restricted; it does not change container-image
 creation, Bash Exec or the client’s original in-process Store route. That
 file is `global/store.sqlite` in the project's volume, so the process runs where
 that volume is mounted (`/layerfs-store` in a Sandbox). On Linux the Store sits
@@ -258,7 +258,7 @@ process identity; the filesystem daemon launches and supervises no commands.
 
 ### Exec output
 
-`exec` returns `{ kind, exitCode, stdout, stderr, message, truncated }` when the
+The existing Bash string form of `exec` returns `{ kind, exitCode, stdout, stderr, message, truncated }` when the
 command ends, and no output is cut at any size (`truncated` is always false).
 Each stream is kept inline up to 1 MiB; a result whose streams fit is exactly
 the one older releases returned. A larger stream is spooled by the binding to
@@ -274,6 +274,14 @@ socket and hash streams do not) and is not ended. The Sandbox runtime reads the
 command's output only as fast as the spool takes it (an 8 KiB window), and a
 spool is bounded by free disk space. Page reads are not traced; the call's
 trace line covers the command's run.
+
+On an explicitly native-bound Windows client, `workspace.exec(ws,
+{ mode: "windows-native", executable, args, env? })` instead returns the original
+streaming command handle after target start. No message/sinks/spool or implicit
+stdin EOF applies. It never interprets a Bash string as executable/argv. Unbound
+and worker clients refuse this object without forwarding it. See the
+[native execution contract](runtime.md#explicit-native-sdk-execution) for streams,
+root exit, finished/cancel ownership and explicit restrictions.
 
 ### Methods
 
@@ -291,10 +299,12 @@ A Workspace's status is not an agent call: it is `backend.daemon.workspace.statu
 in [`@layerfs/backend`](backend.md).
 
 Every grouped method returns a Promise and takes positional arguments; only
-the trailing `{ ... }?` arguments shown above are options objects. A ref is `main`, a Branch name, a Commit
+the trailing `{ ... }?` arguments shown above are options objects, apart from
+the explicitly tagged native command form described above. A ref is `main`, a Branch name, a Commit
 id or a Layer id. Filesystem paths are absolute in that view. Main changes only
 through publish. There is no `remove` alias, harness export, agent/call attribution,
-public inspect or public process-control method.
+public inspect or general process registry. The explicit native command handle
+alone exposes cancellation of its original root, not arbitrary process control.
 
 ### Messages
 

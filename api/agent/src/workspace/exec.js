@@ -20,6 +20,12 @@ import { LayerFSError } from "../errors.js";
 const PAGE = 1 << 20;
 
 export async function exec(client, ws, command, message, sinks) {
+  // An explicit native command returns the original streaming owner, not a
+  // completed Bash/spool result. It never implicitly ends stdin or drains output.
+  if (command !== null && typeof command === "object") {
+    if (message !== undefined || sinks !== undefined) throw new LayerFSError("InvalidInput", "native execution returns stream handles; message and sinks do not apply", null);
+    return invokeClient(client, "workspace.exec", { ...workspaceArgs(ws), command });
+  }
   const to = checkedSinks(sinks);
   const value = await invokeClient(client, "workspace.exec", { ...workspaceArgs(ws), command, message: checkedMessage(message), ...(to ? { spool: true } : {}) });
   if (!to && value.output === undefined) return value;

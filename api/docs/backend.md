@@ -112,6 +112,13 @@ without a trace line.
 | `scope` | 64 hex characters: the fresh daemon observation scope this call's control exchanges carried. |
 | `daemon` | One entry per traced control exchange the call made (a mount makes at least three: Branch lookup, bind, attach). Absent when the call reached no daemon (for example `project.init`). |
 
+For the explicit native SDK command form, the call ends when the original target
+starts, not when it exits. The line carries execution: "started", commandId and
+pid; it does not invent exitCode or completion. Native command arguments are only
+{ mode: "windows-native", args: <count> }; argv contents, executable code and env
+values are not traced. Read the returned original exited/finished receipts for
+completion. Container Bash tracing is unchanged.
+
 Each `daemon` entry holds:
 
 | Field | Meaning |

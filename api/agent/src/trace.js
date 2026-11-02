@@ -21,7 +21,8 @@ export function summary(args = {}) {
   const out = {};
   for (const [name, value] of Object.entries(args)) {
     if (SETTINGS.has(name) || value === undefined) continue;
-    if (CONTENT.has(name)) out[`${name}Bytes`] = size(value);
+    if (name === "command" && value?.mode === "windows-native") out.command = { mode: "windows-native", args: Array.isArray(value.args) ? value.args.length : null };
+    else if (CONTENT.has(name)) out[`${name}Bytes`] = size(value);
     else if (name === "changes" && Array.isArray(value)) {
       out.changes = value.length;
       out.changeBytes = value.reduce((total, change) => total + [...CONTENT].reduce((sum, field) => sum + size(change?.[field]), 0), 0);
@@ -68,6 +69,11 @@ function results(method, args, value) {
   const out = {};
   for (const name of RESULT_IDS[method] ?? []) {
     if (typeof value[name] === "string" || value[name] === null) out[name] = value[name];
+  }
+  if (method === "workspace.exec" && args.command?.mode === "windows-native") {
+    out.execution = "started";
+    if (typeof value.id === "string") out.commandId = value.id;
+    if (Number.isInteger(value.pid)) out.pid = value.pid;
   }
   if (typeof value.process === "string") out.process = value.process;
   if (Number.isInteger(value.exitCode)) out.exitCode = value.exitCode;

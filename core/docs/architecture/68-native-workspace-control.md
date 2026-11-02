@@ -22,6 +22,14 @@ for direct and SDK mounts before awaiting. A directly closed filesystem disappea
 from mounted listings while any original command completion still retains its
 owner and prevents instance close.
 
+A tagged windows-native command object on the existing SDK workspace.exec
+selects that same Session command owner and returns its original streaming handle.
+The SDK snapshots selection before awaiting the resident control, never passes
+objects to unbound/worker transports or interprets Bash strings as executables.
+No second process registry, output spool, stdin EOF or execution timeout is added.
+Trace labels target-start identity separately from actual exited/finished receipts.
+See [explicit native execution](../../../api/docs/runtime.md#explicit-native-sdk-execution).
+
 The product [identity receipt adapter](../../../engine/crates/layerfs-daemon/src/native/receipt.rs)
 encodes the original bound snapshot and original installed Commit completion.
 State/publication commands do not query latest History to guess a prior result.

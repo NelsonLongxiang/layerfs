@@ -132,6 +132,7 @@ function controlOf(client, op) {
  * home and the Store this process opened. */
 export function invokeClient(client, op, args) {
   live(client);
+  if (op === "workspace.exec" && args?.command !== null && typeof args?.command === "object" && !client[STATE].control) throw new LayerFSError("Unsupported", "native command objects require this client to be explicitly bound to a running Windows native instance", null);
   return invoke(op, { ...projectArgs(client), ...storeArgs(client), ...args }, client.options, controlOf(client, op));
 }
 
