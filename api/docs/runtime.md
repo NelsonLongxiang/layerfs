@@ -244,8 +244,12 @@ admission cannot be presented as an empty list or silently deleted.
 
 Native status returns mode plus actual bound workspace/branch identity, base head,
 baseLayer/root and observed dirty counts as bigint. Detailed native counters are
-under native. Unobserved current Store head and headMovedSinceMount are null,
-not guessed false; versioned container delta-read models are not fabricated.
+under native. Status itself reads no Store: the client's own Store binding supplies
+the current Branch head separately, as the daemon binding does, and status reports
+branchHead plus headMovedSinceMount. An empty Branch whose bound base is null is
+observed as no head and no movement; an unavailable head read stays null, never
+guessed from the base. sandbox.list_workspaces reports the same per mounted
+Workspace. Versioned container delta-read models are not fabricated.
 A prepared/committing observation is not complete Ready or kernel-drain evidence.
 
 workspace.commit returns kind Committed or UpToDate, original head/baseLayer/root,

@@ -35,7 +35,14 @@ try{
   const before=native.calls.length;await shop.branch.fork('feature');assert.equal(native.calls.at(-1),'branch.fork');assert.equal(native.calls.length,before+1);
   const unbound=await plain.workspace.mount('1','feature');assert.equal(unbound.image,'fake-image');assert.equal(unbound.mode,undefined);assert.equal(native.calls.at(-1),'workspace.mount');
   await assert.rejects(shop.workspace.mount('999','feature'),{code:'NoSuchSandbox'});
-  const ws=await shop.workspace.mount(registration.sandbox,'feature');assert.equal(ws.mode,'windows-restricted');assert.equal(ws.image,null);assert.equal((await LayerFSBackend.of(shop).daemon.workspace.status(ws)).native.dirtyInodes,1n);
+  const ws=await shop.workspace.mount(registration.sandbox,'feature');assert.equal(ws.mode,'windows-restricted');assert.equal(ws.image,null);const unobserved=await LayerFSBackend.of(shop).daemon.workspace.status(ws);assert.equal(unobserved.native.dirtyInodes,1n);
+  // The fake peer's bound base is null, so the empty Branch is observed: no
+  // head and no movement, rather than an unknown value.
+  assert.equal(unobserved.branchHead,null);assert.equal(unobserved.headMovedSinceMount,false);
+  // A refused separate head read is unavailable, not an empty Branch: it stays
+  // unobserved (null) and never infers movement from the bound base.
+  process.env.CLI_FAKE_REFUSE='branch.list_commits';const unavailable=await LayerFSBackend.of(shop).daemon.workspace.status(ws);delete process.env.CLI_FAKE_REFUSE;
+  assert.equal(unavailable.branchHead,null);assert.equal(unavailable.headMovedSinceMount,null);
   const publication=await shop.workspace.commit(ws);assert.equal(publication.head,'12'+'ab'.repeat(32));assert.equal(publication.root,'ef'.repeat(32));assert.equal(publication.kind,'Committed');
   await shop.close();shop=undefined;assert.equal((await instance.status()).sessions,1);
   const attached=await LayerFS.open('example');await runtime.native.bindClient(attached,instance,{commitScope:'published'});assert.equal((await attached.sandbox.list_workspaces(registration.sandbox)).items.length,1);await attached.workspace.unmount(ws,true);await attached.sandbox.close(registration.sandbox);await attached.close();await plain.close();plain=undefined;await runtime.close();
