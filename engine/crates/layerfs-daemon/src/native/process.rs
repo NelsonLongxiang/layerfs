@@ -184,8 +184,14 @@ fn run() -> io::Result<()> {
             "native mount already exists",
         ));
     }
-    let binding = bootstrap::read(&mut io::stdin().lock()).map_err(io::Error::other)?;
-    let session = Session::bind_existing(&args[2], &args[3], binding).map_err(io::Error::other)?;
+    let startup = bootstrap::read(&mut io::stdin().lock()).map_err(io::Error::other)?;
+    let session = match startup.named {
+        Some((stack, name)) => {
+            Session::bind_registered(&args[2], &args[3], startup.binding, stack, name)
+        }
+        None => Session::bind_existing(&args[2], &args[3], startup.binding),
+    }
+    .map_err(io::Error::other)?;
     let root = session.mount().root_serial();
     let lane = session.requests();
     let mut child = Command::new(&args[0])

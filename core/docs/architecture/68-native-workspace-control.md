@@ -4,6 +4,33 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Registered Windows project authority (2026-11-02)
+
+The explicit runtime native Session consumer now also accepts an installed
+project and existing Branch name, without exposing catalog/cursor authority to
+JavaScript. It takes the physical Store from the runtime's existing project
+record; the product process reads the owner-private SDK home entry using the
+shared [Windows project reader](../../../engine/crates/layerfs-store-service/src/windows_project.rs),
+which is also consumed by the Node SDK's Windows discovery. That reader reuses
+the existing Answer/StoreManifest codec, owner-private checks and Disposable
+profile; it rejects record framing and substituted installed authority. It is
+not a new public credential-export operation or independent discovery database.
+
+The LFSREG01 inherited startup frame supplies one bounded home/project/Branch
+selection and fresh Workspace identity, with no catalog/cursor. Native Session
+opens the same Store directly once, resolves the Branch through branch_named in
+the manifest's LayerStack and performs its existing protected-main/bind/root
+logic. Named intent remains in a failed BindFailure alongside original authority
+and initialized owners. Startup errors keep typed source where available; the
+runtime still returns sanitized Unknown and retains a started process's custody.
+Existing LFSBND01 authority input and its id-based binding remain supported.
+
+No Sandbox or Exec contract is relaxed. This is registered-project consumption
+by the integration host's explicit native Session, not SDK workspace.mount in a
+running Sandbox or machine-level endpoint discovery. The
+[runtime guide](../../../api/docs/runtime.md#open-an-installed-runtime-project-without-exporting-authority)
+records the public selection and remaining limits.
+
 ## Explicit JavaScript runtime consumer (2026-11-02)
 
 [LayerFSRuntime.native](../../../api/runtime/src/index.js) now consumes the

@@ -33,6 +33,7 @@ pub struct BindFailure {
     pub phase: BindPhase,
     pub cause: BindCause,
     pub binding: Binding,
+    pub named: Option<(layerfs_history::LayerStackId, layerfs_history::HistoryName)>,
     pub store_path: PathBuf,
     pub work_path: PathBuf,
     service: Option<StoreService>,
@@ -62,6 +63,7 @@ impl fmt::Debug for BindFailure {
             .field("phase", &self.phase)
             .field("cause", &self.cause)
             .field("branch", &self.binding.branch)
+            .field("named", &self.named)
             .field("workspace", &self.binding.workspace)
             .field("service_retained", &self.service_retained())
             .field("workspace_retained", &self.workspace_retained())
@@ -80,10 +82,28 @@ impl Session {
         work: &Path,
         binding: Binding,
     ) -> std::result::Result<Self, Box<BindFailure>> {
+        Self::bind_selected(store, work, binding, None)
+    }
+    pub fn bind_registered(
+        store: &Path,
+        work: &Path,
+        binding: Binding,
+        stack: layerfs_history::LayerStackId,
+        name: layerfs_history::HistoryName,
+    ) -> std::result::Result<Self, Box<BindFailure>> {
+        Self::bind_selected(store, work, binding, Some((stack, name)))
+    }
+    fn bind_selected(
+        store: &Path,
+        work: &Path,
+        binding: Binding,
+        named: Option<(layerfs_history::LayerStackId, layerfs_history::HistoryName)>,
+    ) -> std::result::Result<Self, Box<BindFailure>> {
         let mut failure = Box::new(BindFailure {
             phase: BindPhase::Input,
             cause: BindCause::Invalid("unattempted"),
             binding,
+            named,
             store_path: store.into(),
             work_path: work.into(),
             service: None,
@@ -110,6 +130,15 @@ impl Session {
             );
             let service = failure.service.as_ref().expect("opened");
             failure.phase = BindPhase::Branch;
+            if let Some((stack, name)) = &failure.named {
+                let branch = service
+                    .store
+                    .history()
+                    .branch_named(*stack, name)
+                    .map_err(|e| BindCause::Bind(e.to_string()))?
+                    .ok_or(BindCause::MissingBranch)?;
+                failure.binding.branch = branch.id;
+            }
             let branch = service
                 .store
                 .history()

@@ -25,6 +25,8 @@ mod store_service;
 pub mod telemetry;
 #[cfg(target_os = "windows")]
 pub mod windows_acl;
+#[cfg(target_os = "windows")]
+pub mod windows_project;
 pub mod write;
 
 pub use overlay::owner;

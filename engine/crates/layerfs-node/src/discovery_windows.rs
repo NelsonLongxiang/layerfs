@@ -16,15 +16,12 @@ use crate::{
     job::{failed, refused},
     registry::{self, Project},
 };
-use layerfs_bridge::{
-    control::{Reply, SdkRefusal, SdkValue},
-    provision::StoreManifest,
-};
+use layerfs_bridge::control::{Reply, SdkRefusal, SdkValue};
 use layerfs_persistence::{SealedStore, SqlitePersistenceProfile};
 use std::{
     collections::BTreeSet,
     fs::{self, OpenOptions},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     sync::{Condvar, Mutex},
     time::{Duration, Instant},
@@ -218,23 +215,6 @@ pub(crate) fn save(path: &Path, value: SdkValue) -> Result<()> {
     fs::rename(temp, path).map_err(failed)
 }
 
-pub(crate) fn load(path: &Path) -> Result<SdkValue> {
-    private(path, false)?;
-    let file = OpenOptions::new().read(true).open(path).map_err(failed)?;
-    if file.metadata().map_err(failed)?.len() > 65535 {
-        return Err(refused("InvalidInput", "discovery record too large"));
-    }
-    let mut bytes = Vec::new();
-    file.take(65536).read_to_end(&mut bytes).map_err(failed)?;
-    match layerfs_bridge::control::Answer::decode(&bytes)
-        .map_err(failed)?
-        .reply
-    {
-        Reply::Sdk(value) => Ok(value),
-        _ => Err(refused("InvalidInput", "discovery record kind")),
-    }
-}
-
 pub(crate) fn save_project(path: &Path, project: &Project) -> Result<()> {
     save(
         &path.join("project.record"),
@@ -259,20 +239,21 @@ pub(crate) fn save_project(path: &Path, project: &Project) -> Result<()> {
 
 pub(crate) fn project(args: &SdkValue) -> Result<Project> {
     let path = project_dir(args)?;
-    let value = load(&path.join("project.record"))?;
-    let decode = |name| match value.get(name) {
-        Some(SdkValue::Bytes(bytes)) => StoreManifest::decode(bytes).map_err(failed),
-        _ => Err(refused("NoSuchProject", "no complete project manifest")),
-    };
-    let manifest = decode("manifest")?;
-    if manifest.profile != layerfs_bridge::provision::StoreProfile::Disposable {
-        return Err(refused("InvalidInput", "Disposable required"));
-    }
-    let installed = if matches!(value.get("installed"), Some(SdkValue::Bytes(_))) {
-        Some(decode("installed")?)
-    } else {
-        None
-    };
+    let record = layerfs_store_service::windows_project::read(
+        path.parent().expect("project home"),
+        registry::text(args, "project")?,
+    )
+    .map_err(|e| match e {
+        layerfs_store_service::windows_project::ReadError::Unauthorized => {
+            refused("Unauthorized", e.to_string())
+        }
+        layerfs_store_service::windows_project::ReadError::Invalid(_) => {
+            refused("InvalidInput", e.to_string())
+        }
+        _ => failed(e),
+    })?;
+    let manifest = record.manifest;
+    let installed = record.installed;
     Ok(Project {
         store: SealedStore {
             path: path.join("sealed.sqlite"),

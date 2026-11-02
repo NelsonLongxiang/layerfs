@@ -125,6 +125,50 @@ It does not qualify complete SDK Ready, arbitrary mappings/kernel references,
 crash recovery or public endpoint authentication. Store calls remain in-process
 on the native route; no Store worker is introduced.
 
+### Open an installed runtime project without exporting authority
+
+For a project initialized by this runtime, use the same operation with project
+and Branch names instead of Store/catalog/cursor values:
+
+```js
+const session = await runtime.native.open({
+  executable, host, winfsp, work, path,
+  project: "my-project",
+  branch: "feature", // existing non-main Branch name, not an identity
+});
+```
+
+The runtime's installed-project record selects the volume's Store path. The
+product process itself reads the existing owner-private SDK project record from
+this runtime's home, checks the original/installed manifests and Disposable
+profile, and selects the Branch by its name in that project's LayerStack through
+the History index. It then binds through the same direct Store/Session path.
+There is no whole-project scan, source re-import or credential-export method.
+Do not combine project mode with store/catalog/cursor: that ambiguity refuses
+before spawning. main is protected; use an existing fork. Missing runtime
+registration refuses NoSuchProject; failures after a process starts retain the
+original process observation rather than guessing a safe retry.
+
+JavaScript does not parse or receive the catalog/cursor bytes in this mode. They
+remain inside the product process and its direct Store. The startup frame carries
+only the home, project/Branch names and fresh Workspace identity. Native Session
+list observations add project and branch when selected this way. This relies on
+the existing owner-private home/project/record checks, not the runtime's JSON
+record as an authority grant. A substituted Store still must open with the
+project's catalog binding. The manifest's original root is an Init identity,
+not a requirement that a live Branch remain at that root.
+
+Both SDK discovery and native startup use the same protected project record
+reader. It rejects wrong record identity/kind/trailing bytes, widened owner
+privacy, over-window input and installed metadata that differs from its original
+sealed project except for the acknowledged SQLite version. No new FFI is used.
+Equally privileged path substitution races remain outside this guarantee.
+
+This connects registered projects to an explicit native filesystem Session; it
+still does **not** register an SDK Sandbox, launch commands, autostart a Sandbox or
+change workspace.mount's running-Sandbox contract. See the
+[registered-project implementation report](../../core/docs/issues/352/WINDOWS-REGISTERED-NATIVE-2026-11-02.md).
+
 ## Init
 
 `start_init(name, folder, { image, timeout })` refuses a bad name, folder,
