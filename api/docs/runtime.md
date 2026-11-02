@@ -145,12 +145,15 @@ automatic retry. Lost/unknown protocol outcomes retain custody without recovery.
 Only zero actual owners/requests and completed callbacks permit the original
 clean/discard prepare, native stop/join/detach, product finish and process receipt.
 Functional evidence covers the pinned minimal Git object workload, isolated
-read-only-view refusal and a trusted-local Git roundtrip with two publications,
-two byte-exact remounts and three direct normal unmounts. It does not qualify
-arbitrary kernel references, writable mappings, forced teardown, the previous
-full Git workload. Restricted Git cwd coverage is described separately below. See the
-[coordinated-close evidence](../../core/docs/issues/352/WINDOWS-NATIVE-CLOSE-2026-11-03.md)
-and [focused Git roundtrip](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-ROUNDTRIP-2026-11-03.md).
+read-only-view refusal and focused trusted-local and restricted SDK Git roundtrips.
+Both roundtrips preserve complete staged/working/index/ignored state across two
+publications and two byte-exact remounts, followed by three original normal
+unmounts. The restricted SDK run uses one original resident through its checked
+token/desktop terminal. This does not qualify arbitrary kernel references, writable
+mappings, forced teardown or the prior full Git workload. See the
+[coordinated-close evidence](../../core/docs/issues/352/WINDOWS-NATIVE-CLOSE-2026-11-03.md),
+[trusted-local roundtrip](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-ROUNDTRIP-2026-11-03.md)
+and [restricted SDK roundtrip](../../core/docs/issues/352/WINDOWS-NATIVE-SDK-GIT-ROUNDTRIP-2026-11-03.md).
 
 Only a correctly correlated terminal acknowledgement **and** the original parent
 process's successful close resolve `unmount()`. The result includes string command
@@ -490,9 +493,11 @@ code or an isolated SDK Sandbox.
 Git for Windows path normalization is a separate compatibility requirement. With
 the new resident sibling-junction layout and an already accessible work-parent
 chain, the pinned Git2.46.0.windows.1 build can use its GetLongPathNameW fallback
-without enumerating protected backend work. Restricted SDK Git init/add/commit/show,
-explicit publication, index/ignored-binary remount and normal close now have scoped
-functional evidence. GetFinalPathNameByHandleW DOS naming still returns error1005:
+without enumerating protected backend work. Restricted SDK Git init/add/commit/show
+and a separate complete staged/working/index/ignored roundtrip with two explicit
+publications, two byte-exact remounts and three normal closes have scoped functional
+evidence. The latter uses the original resident and closes its token/desktop; it
+does not create a container image or make named IPC work. GetFinalPathNameByHandleW DOS naming still returns error1005:
 this is not general DOS-volume identity support, all Git configuration/symlink
 paths or arbitrary private-ancestor compatibility. No token/ancestor ACL widening
 or Mount Manager registration is used. See the [cwd topology fix](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-CWD-2026-11-03.md).
