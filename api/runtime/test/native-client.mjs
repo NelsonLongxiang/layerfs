@@ -17,8 +17,9 @@ const sessionPeer=fileURLToPath(new URL('./fixture/native-session-peer.mjs',impo
 let shop,plain,failure=null;const events=[];
 try{
  shop=await LayerFS.open('example');plain=await LayerFS.open('example');
- const instance=await runtime.native.create({project:'example',executable:process.execPath,host:sessionPeer,winfsp:sessionPeer,restrictedLauncher:p,work:join(out,'instance')});
- mkdirSync(join(out,'instance')); // The independent wire peer owns no real workspace.
+ const instanceWork=join(out,selected==='long-work-name'?'i'.repeat(230):'instance');
+ const instance=await runtime.native.create({project:'example',executable:process.execPath,host:sessionPeer,winfsp:sessionPeer,restrictedLauncher:p,work:instanceWork});
+ mkdirSync(instanceWork); // The independent wire peer owns no real workspace.
  if(selected==='scope'){
   await assert.rejects(runtime.native.bindClient(shop,{...instance},{commitScope:'published'}),{code:'NoSuchSandbox'});
   await assert.rejects(runtime.native.bindClient(shop,instance,{}),{code:'InvalidInput'});
@@ -40,13 +41,24 @@ try{
   const attached=await LayerFS.open('example');await runtime.native.bindClient(attached,instance,{commitScope:'published'});assert.equal((await attached.sandbox.list_workspaces(registration.sandbox)).items.length,1);await attached.workspace.unmount(ws,true);await attached.sandbox.close(registration.sandbox);await attached.close();await plain.close();plain=undefined;await runtime.close();
  }else if(selected==='mixed'){
   const ws={sandbox:registration.sandbox,path:directBefore.path};
+  assert.equal(resolve(directBefore.path),resolve(join(out,'layerfs-'+instance.id+'-1-mount')));
+  assert.equal((await runtime.native.list())[0].work,resolve(join(out,'instance/1-work')));
   const listed=await shop.sandbox.list_workspaces(registration.sandbox);assert.equal(listed.items.length,1,'SDK list must include the original direct mount');assert.equal(listed.items[0].workspace,directBefore.id);
   const status=await LayerFSBackend.of(shop).daemon.workspace.status(ws);assert.equal(status.workspace,directBefore.id);assert.equal((await shop.workspace.commit(ws)).head,'12'+'ab'.repeat(32));
-  const secondDirect=await instance.mount('feature');assert.equal((await shop.sandbox.list_workspaces(registration.sandbox)).items.length,2);
+  const secondDirect=await instance.mount('feature');assert.equal((await shop.sandbox.list_workspaces(registration.sandbox)).items.length,2);assert.equal(resolve(secondDirect.path),resolve(join(out,'layerfs-'+instance.id+'-2-mount')));assert.notEqual(secondDirect.path,directBefore.path);
   await secondDirect.unmount(true);assert.equal((await shop.sandbox.list_workspaces(registration.sandbox)).items.length,1);await assert.rejects(LayerFSBackend.of(shop).daemon.workspace.status({sandbox:registration.sandbox,path:secondDirect.path}),{code:'NotMounted'});
   const other=await runtime.native.create({project:'example',executable:process.execPath,host:sessionPeer,winfsp:sessionPeer,restrictedLauncher:p,work:join(out,'other-instance')});mkdirSync(join(out,'other-instance'));const foreign=await other.mount('feature');await assert.rejects(LayerFSBackend.of(shop).daemon.workspace.status({sandbox:registration.sandbox,path:foreign.path}),{code:'NotMounted'});await foreign.unmount(true);await other.close();
   await shop.workspace.unmount(ws,true);await assert.rejects(directBefore.status(),{code:'NotMounted'});assert.deepEqual((await shop.sandbox.list_workspaces(registration.sandbox)).items,[]);assert.equal((await instance.status()).sessions,0);
   await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'one-original-owner',beforeBind:true,directAfterBind:true,crossEntryUnmount:true,foreignInstanceRefused:true});
+ }else if(selected==='mount-path-guards'){
+  const first=join(out,'layerfs-'+instance.id+'-1-mount');mkdirSync(first);const marker=join(first,'original.txt');writeFileSync(marker,'must not replace');
+  await assert.rejects(instance.mount('feature'),{code:'InvalidInput'});assert.equal(readFileSync(marker,'utf8'),'must not replace');assert.deepEqual(await runtime.native.list(),[]);
+  const direct=await instance.mount('feature');assert.equal(resolve(direct.path),resolve(join(out,'layerfs-'+instance.id+'-2-mount')));
+  await assert.rejects(runtime.native.open({project:'example',branch:'feature',executable:process.execPath,host:sessionPeer,winfsp:sessionPeer,work:join(out,'clash-work'),path:direct.path}),{code:'Busy'});
+  await assert.rejects(runtime.native.create({project:'example',executable:process.execPath,host:sessionPeer,winfsp:sessionPeer,restrictedLauncher:p,work:direct.path}),{code:'Busy'});
+  await direct.unmount(true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();assert.equal(readFileSync(marker,'utf8'),'must not replace');events.push({label:'sibling-path-guards',existingPreserved:true,distinctNextAdmission:true,crossOwnerOverlapRefused:true});
+ }else if(selected==='long-work-name'){
+  const direct=await instance.mount('feature');assert.equal(resolve(direct.path),resolve(join(out,'layerfs-'+instance.id+'-1-mount')));assert.ok(direct.path.length<instanceWork.length);assert.equal((await runtime.native.list())[0].work,resolve(join(instanceWork,'1-work')));await direct.unmount(true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'bounded-sibling-name',workComponent:230,uniqueSibling:true,backendUnchanged:true});
  }else if(selected==='pending-mixed'){
   const direct=await instance.mount('feature'),ws={sandbox:registration.sandbox,path:direct.path};
   const marker=join(out,'session-calls.json');

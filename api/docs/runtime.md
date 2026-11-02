@@ -148,7 +148,7 @@ Functional evidence covers the pinned minimal Git object workload, isolated
 read-only-view refusal and a trusted-local Git roundtrip with two publications,
 two byte-exact remounts and three direct normal unmounts. It does not qualify
 arbitrary kernel references, writable mappings, forced teardown, the previous
-full Git workload or restricted Git cwd compatibility. See the
+full Git workload. Restricted Git cwd coverage is described separately below. See the
 [coordinated-close evidence](../../core/docs/issues/352/WINDOWS-NATIVE-CLOSE-2026-11-03.md)
 and [focused Git roundtrip](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-ROUNDTRIP-2026-11-03.md).
 
@@ -332,8 +332,17 @@ WSL worker, automatic placement or machine-wide discovery is implied.
 
 The returned immutable instance has id, project, mode: "windows-restricted", and
 status(), mount(branch), close(). mount accepts one existing non-main Branch name.
-It uses only the original running instance, creates fresh numbered work/mount paths
-beneath the instance's work root, and returns the existing native Session handle.
+It uses only the original running instance and returns the existing native Session
+handle. Numbered backend work stays beneath the protected instance work directory.
+Each fresh mount junction instead lives beside that directory, under its existing
+parent, with a bounded component name derived from the instance UUID and mount
+sequence. The original NativeSessions owner still claims both paths before awaiting;
+existing targets and overlapping owners are refused, not replaced. This avoids
+forcing path-normalization APIs to enumerate the protected instance directory.
+Applications needing Win32 long-path normalization must choose a work parent whose
+existing ancestor metadata is accessible to the restricted token. No ancestor ACL
+is probed-and-repaired or broadened automatically. A private ancestor further up
+that caller-selected chain can still cause normalization to fail.
 It does not start or replace an instance. Two Sessions can coexist and use the same
 original token and private desktop. runtime.native.open remains available for an
 explicit standalone Session; overlapping instance paths are reserved and refuse
@@ -478,17 +487,21 @@ and there is no network, registry, process-tree, quota or general host isolation
 claim. Do not represent this local boundary as complete support for untrusted
 code or an isolated SDK Sandbox.
 
-Git for Windows path normalization is also a distinct compatibility requirement.
-In the pinned Git2.46.0.windows.1 build, restricted getcwd opens this mount but
-GetFinalPathNameByHandleW with DOS naming returns error1005; its GetLongPathNameW
-fallback returns Access denied when private ancestors cannot be enumerated.
-Git init consequently exits128 before repository setup. Ordinary relative I/O
-and stat(cwd) success do not establish Git compatibility. Trusted same-user
-Sessions have separately preserved complete Git/index/ignored state across two
-publications and remounts, but a third read-only verification mount retains
-13 native references; complete Git normal-close qualification remains FAIL.
-No token/ancestor ACL widening or Mount Manager registration is selected for
-this limitation. See the [scoped Git record](../../core/docs/issues/352/WINDOWS-NATIVE-SDK-GIT-2026-11-03.md).
+Git for Windows path normalization is a separate compatibility requirement. With
+the new resident sibling-junction layout and an already accessible work-parent
+chain, the pinned Git2.46.0.windows.1 build can use its GetLongPathNameW fallback
+without enumerating protected backend work. Restricted SDK Git init/add/commit/show,
+explicit publication, index/ignored-binary remount and normal close now have scoped
+functional evidence. GetFinalPathNameByHandleW DOS naming still returns error1005:
+this is not general DOS-volume identity support, all Git configuration/symlink
+paths or arbitrary private-ancestor compatibility. No token/ancestor ACL widening
+or Mount Manager registration is used. See the [cwd topology fix](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-CWD-2026-11-03.md).
+
+The [old Git record](../../core/docs/issues/352/WINDOWS-NATIVE-SDK-GIT-2026-11-03.md)
+keeps its original cwd exit128 and 13-reference FAIL. Later trusted-local
+[multi-publication evidence](../../core/docs/issues/352/WINDOWS-NATIVE-GIT-ROUNDTRIP-2026-11-03.md)
+and restricted sibling-layout evidence are separate inputs, not revisions of those
+old outcomes or general kernel/mapping qualification.
 
 Named IPC pipes are a separate access boundary. On the pinned Node24.12.0/libuv
 1.51.0 Windows build, a restricted command’s child_process IPC setup creates a

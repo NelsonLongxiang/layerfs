@@ -1,5 +1,6 @@
 // The original resident native token/desktop owner. It is not a container image.
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
 import { LayerFSError } from "@layerfs/agent";
 
 const retained = new Set();
@@ -137,7 +138,10 @@ export class NativeInstance {
     this.#mounting++;
     try {
       return await this.#sessions.open({ executable: o.executable, host: o.host, winfsp: o.winfsp, project: o.project, branch,
-        work: o.work + "/" + n + "-work", path: o.work + "/" + n + "-mount", readyTimeoutMs: o.readyTimeoutMs }, { id: o.id, policy, store: o.store });
+        work: o.work + "/" + n + "-work",
+        // Keep backend work private. The fresh junction lives beside it so
+        // ordinary path normalization never needs to enumerate private work.
+        path: join(dirname(o.work), "layerfs-" + o.id + "-" + n + "-mount"), readyTimeoutMs: o.readyTimeoutMs }, { id: o.id, policy, store: o.store });
     } finally { this.#mounting--; }
   }
   #close() {

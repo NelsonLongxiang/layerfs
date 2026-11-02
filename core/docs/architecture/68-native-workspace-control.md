@@ -111,7 +111,14 @@ no commands. Unknown transfer custody is neither replayed nor guessed released.
 The [runtime instance](../../../api/runtime/src/platform/native-windows/instance.js)
 and [manager](../../../api/runtime/src/platform/native-windows/instances.js) claim
 work before awaiting and reserve it against standalone Sessions. Mounts require the
-same still-running instance and fixed project Store, never autostart. Active mounts,
+same still-running instance and fixed project Store, never autostart. Backend work
+remains inside the private instance directory; fresh junctions use unique bounded
+UUID/sequence names beside it. This prevents Win32 long-path enumeration from
+necessarily crossing protected backend work, without granting ancestors any new
+rights. The existing caller-selected parent chain can still restrict normalization.
+NativeSessions continues to claim original work/path ownership before awaiting,
+including fresh-target and cross-owner overlap checks. No additional mount registry
+or path-dependent Store/command transport is introduced. Active mounts,
 command owners and original pending calls block normal close without forced cleanup.
 Status, handoff and close correlate original control ids; token handles do not reach
 JavaScript. The public native mode remains separate from the SDK container-image
