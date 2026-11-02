@@ -1,7 +1,8 @@
 // The Windows-native Store route (#352, owner 2026-10-25): Store calls run in
 // this process, no WSL worker and no Docker engine. Only the Store face is
-// served — project, fs and branch; Sandbox and Workspace calls refuse
-// Unsupported in the engine's table, and this platform never starts anything.
+// served — project, fs and branch; SDK Sandbox and Workspace calls still refuse
+// Unsupported in the engine table. runtime.native separately starts explicit
+// host-owned filesystem Sessions; they are not SDK Sandboxes or a Store worker.
 //
 // This module keeps the same shape as platform/windows so the runtime needs no
 // second code path: the calls that only make sense with a worker (start,
@@ -13,7 +14,7 @@ import { LayerFSError } from "@layerfs/agent";
 
 const refuse = (code, message) => new LayerFSError(code, message, null);
 
-/** The Windows-native route starts nothing, so it has no worker to report. */
+/** No Store worker is started here; explicit native Sessions have their own list. */
 function status() {
   return { worker: null };
 }

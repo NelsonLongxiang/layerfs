@@ -42,6 +42,9 @@ try {
     assert.deepEqual(methods(runtime.volume), ["list", "remove"]);
     assert.deepEqual(methods(runtime.worker), ["restart", "start"]);
     assert.deepEqual(methods(runtime.events), ["subscribe"]);
+    assert.deepEqual(methods(runtime.native), ["list", "open"]);
+    assert.deepEqual(await runtime.native.list(), []);
+    await assert.rejects(runtime.native.open({}), { code: "Unsupported" });
     const state = await runtime.status();
     assert.deepEqual([state.platform, state.missing, state.docker, state.worker], ["linux", [], { level: "ok", version: "27.0.1" }, null]);
     // Linux has no worker; a restart needs confirm before anything else

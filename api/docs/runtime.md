@@ -47,6 +47,84 @@ checked once at `open`), `volumes` (Linux),
 (default true) and on Windows `wsl: { distribution, user, node, home }`. A
 missing setting does not refuse `open`: `status().missing` lists it.
 
+## Explicit Windows-native filesystem Sessions
+
+With `native: true` on Windows, `runtime.native` is an explicit host-owned
+filesystem process API. It is **not** the agent SDK Sandbox/Workspace family:
+`workspace.mount(sandbox, branch)` still names an already-running Sandbox and
+remains unsupported on the Windows-native SDK route. This API does not register
+one, choose an image, launch commands, or start a WSL/Linux worker.
+
+```js
+const runtime = await LayerFSRuntime.open({ home, native: true, sweep: false });
+const session = await runtime.native.open({
+  executable, // absolute product layerfs-native.exe
+  host,       // absolute product layerfs-winfsp.exe
+  winfsp,     // absolute installed winfsp-x64.dll
+  store,      // existing absolute NTFS Store path
+  work,       // fresh absolute path; parent must exist
+  path,       // fresh absolute mountpoint; parent must exist
+  catalog,    // Uint8Array, 1–128 bytes; supplied by the authority holder
+  cursor,     // Uint8Array, exactly 32 bytes, not all zero
+  branch,     // explicit Branch id, 34 hex digits including tag 11
+  readyTimeoutMs: 15000, // optional readiness wait only; 1–120000
+});
+// Ordinary local processes may now use session.path; they need no Exec identity.
+const state = await session.status();
+const publication = await session.commit("published");
+const terminal = await session.unmount();
+await runtime.close();
+```
+
+Paths are explicit local drive paths. Existing mount/work objects and overlapping
+ownership are refused; the Store is opened by the product Session, not served
+through JavaScript. Binding bytes are copied synchronously, travel only through
+inherited stdin and are removed from the temporary frame after its write callback.
+They never enter argv, list observations or errors. Temporary clearing is not a
+cryptographic erasure guarantee. Executables are explicitly trusted caller inputs;
+this API is not a protection boundary against a malicious same-user binary or a
+filesystem path substitution race.
+
+`open` resolves only after the product's actual native root-service receipt, with
+`{ id, path, status(), commit(scope), unmount() }`. The handle is immutable;
+`root`, revision/count fields from `status` and Commit revision are `bigint`
+so 64-bit values are not rounded. `commit("published")` returns
+`{ changed, revision, scope: "published", published: true }`. No omitted/default
+scope, force, message or application-visible mapping capture is inferred.
+
+Only a correctly correlated terminal acknowledgement **and** the original parent
+process's successful close resolve `unmount()`. The result includes string command
+`id`, `nativeExit`, raw `dispatcherExit`, `overlayClosed`,
+`processExit` and `processSignal`. A Busy refusal leaves the handle serving;
+a later explicit request after actual owner release is a different operation,
+not an automatic retry. Unmount is refused locally while original calls remain
+pending and blocks later admission once sent. It closes no caller-owned files,
+mappings or commands to make a Busy result succeed.
+
+`runtime.native.list()` returns process-local observations
+`{ id, path, work, state, pid, root }`; the optional root is a decimal string,
+not a general Ready or kernel-drain proof. States include starting, serving,
+unmounting and retained. A failed start with no process is removed. A process
+which started but failed, lost its reply stream, sent malformed/cross-correlated
+answers or missed readiness retains its original custody. Errors are sanitized
+`Unknown`; original requests/bytes/cause and the process remain held internally,
+with a bounded stderr diagnostic tail. There is no kill, reconnect, resend,
+admitted-operation timeout or automatic unmount. The caller may inspect the
+retained observation, but no recovery/re-adoption API is implemented.
+
+`runtime.close()` refuses Busy with starting/active native Sessions or Unknown
+with retained ones, before closing clients or changing its closed flag. Unmount
+explicitly first; a finally-block close must not hide the original Busy/Unknown.
+Dropping a handle is not release evidence. SDK `LayerFS.close()` and its
+container Workspace ownership semantics remain unchanged. Multiple runtimes have
+independent process-local observations; this is not machine-wide discovery.
+
+The public native API has direct WinFsp functional evidence in the
+[dated implementation report](../../core/docs/issues/352/WINDOWS-RUNTIME-NATIVE-2026-11-02.md).
+It does not qualify complete SDK Ready, arbitrary mappings/kernel references,
+crash recovery or public endpoint authentication. Store calls remain in-process
+on the native route; no Store worker is introduced.
+
 ## Init
 
 `start_init(name, folder, { image, timeout })` refuses a bad name, folder,

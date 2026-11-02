@@ -22,6 +22,7 @@ import linux from "./platform/linux/index.js";
 import macos from "./platform/macos/index.js";
 import windows from "./platform/windows/index.js";
 import nativeWindows from "./platform/native-windows/index.js";
+import { NativeSessions } from "./platform/native-windows/sessions.js";
 import { list } from "./project/list.js";
 import { InitJobs } from "./project/jobs.js";
 import { prepare, runInit } from "./project/init.js";
@@ -39,6 +40,7 @@ const PLATFORMS = { linux, macos, windows, "native-windows": nativeWindows };
 const FACTORY = Symbol("LayerFSRuntime.open");
 
 export class LayerFSRuntime {
+  #nativeSessions;
   /** A runtime on the LayerFS home `settings.home` (settings.js lists the rest). Opens nothing else; with
    * `sweep` (the default) it then runs one runtime.sandbox.sweep in the background, reported by status().sweep. */
   static async open(settings = {}) {
@@ -58,6 +60,7 @@ export class LayerFSRuntime {
     const endpoint = this.platform.endpoint(settings);
     if (endpoint) useWorker(endpoint);
     this.clients = new Clients(this);
+    this.#nativeSessions = new NativeSessions(this);
     const jobs = new InitJobs((prepared, report) => runInit(this, prepared, report));
     const live = (method) => async (...args) => {
       if (this.closed) throw new LayerFSError("InvalidInput", "this LayerFS runtime is closed; open another with LayerFSRuntime.open", null);
@@ -69,6 +72,10 @@ export class LayerFSRuntime {
       if (!found) throw new LayerFSError("NoSuchProject", `no LayerFS project named ${name} in ${settings.home}`, null);
       if (!found.volume) throw new LayerFSError("InvalidInput", `the runtime has no record of ${name}'s volume (made outside this runtime)`, null);
       return found;
+    };
+    this.native = {
+      open: live((options) => this.#nativeSessions.open(options)),
+      list: live(() => this.#nativeSessions.list()),
     };
     this.status = live(async () => ({ ...(await status(this)), sweep: this.swept }));
     this.worker = {
@@ -102,8 +109,9 @@ export class LayerFSRuntime {
     this.events = { subscribe: (options) => { if (this.closed) throw new LayerFSError("InvalidInput", "this LayerFS runtime is closed", null); return subscribe(this, options); } };
   }
 
-  /** Closes the runtime's project clients (Workspaces stay mounted) and, on
-   * Windows, the worker it started (it drains first). A second close does nothing. */
+  /** Closes project clients and any worker it started. Explicit runtime.native
+   * Sessions must first be unmounted: active/retained owners refuse Busy/Unknown
+   * without changing the runtime. SDK Workspace client close remains separate. */
   /** The sweep `open` starts, after the caller's synchronous setup, so nothing it reads is half made. */
   #startSweep() {
     this.swept = { state: "running" };
@@ -117,7 +125,9 @@ export class LayerFSRuntime {
 
   async close() {
     if (this.closed) return;
+    this.#nativeSessions.assertIdle();
     await this.sweeping;
+    this.#nativeSessions.assertIdle();
     this.closed = true;
     await this.clients.closeAll();
     await this.platform.close?.(this.settings);

@@ -4,6 +4,33 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Explicit JavaScript runtime consumer (2026-11-02)
+
+[LayerFSRuntime.native](../../../api/runtime/src/index.js) now consumes the
+standalone native product through its original inherited control streams. The
+[manager](../../../api/runtime/src/platform/native-windows/sessions.js) validates
+explicit executable/Store/work/mount and authority, claims per-runtime ownership
+before awaiting, and creates a fresh Workspace identity. It does not create or
+impersonate an SDK Sandbox, automatically mount from the agent SDK, or route Store
+calls through a worker. Existing SDK Workspace/Sandbox refusals are unchanged.
+
+The [process client](../../../api/runtime/src/platform/native-windows/session.js)
+accepts actual root-service evidence, strictly correlates id/kind replies and
+preserves all u64 fields as BigInt. Published Commit requires an explicit scope.
+Native Busy keeps service usable; unmount resolves only after both terminal
+acknowledgement and the exact original product process's successful close. A
+readiness deadline, malformed/foreign/duplicate reply, stream EOF, unknown outcome
+or failed terminal exit retains original inputs/results/process references with
+sanitized errors. There is no implicit close, kill, retry or reattachment path.
+A bounded diagnostic tail is not an exact stderr archive.
+
+runtime.native.list reports process-local Session observations; runtime.close
+refuses active/retained native ownership before closing clients. This runtime
+surface is an explicit integration-host adapter, not workspace.mount in a running
+Sandbox, remote authentication/discovery, command isolation or complete kernel
+readiness. Full public contract and remaining limits are in the
+[runtime guide](../../../api/docs/runtime.md#explicit-windows-native-filesystem-sessions).
+
 ## Standalone Windows inherited-stream entry (2026-11-02)
 
 The product [layerfs-native](../../../engine/crates/layerfs-daemon/src/bin/layerfs-native.rs)
