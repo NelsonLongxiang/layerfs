@@ -463,6 +463,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerfs-daemon"
+version = "1.1.0"
+dependencies = [
+ "layerfs-bridge",
+ "layerfs-content",
+ "layerfs-fuse",
+ "layerfs-history",
+ "layerfs-overlay",
+ "layerfs-persistence",
+ "layerfs-storage",
+ "layerfs-store-service",
+ "layerfs-telemetry",
+ "layerfs-workspace",
+ "nix",
+]
+
+[[package]]
 name = "layerfs-fuse"
 version = "1.1.0"
 dependencies = [
@@ -524,6 +541,7 @@ name = "layerfs-projfs-probe"
 version = "0.1.0"
 dependencies = [
  "layerfs-content",
+ "layerfs-daemon",
  "layerfs-fuse",
  "layerfs-history",
  "layerfs-overlay",

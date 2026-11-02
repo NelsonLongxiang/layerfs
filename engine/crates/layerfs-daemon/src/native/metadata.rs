@@ -1,5 +1,7 @@
 //! Native basic information backed by the existing typed Workspace mutation.
-use super::{mutation_error, refused, Result, Session, Stat};
+use super::session::State as Session;
+use super::types::mutation_error;
+use super::{refused, Result, Stat};
 use layerfs_workspace::{Operation, Time};
 impl Session {
     pub fn overwrite_windows(

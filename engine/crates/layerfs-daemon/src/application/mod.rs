@@ -1,6 +1,10 @@
 //! Production direct-Store daemon startup/control, with no command supervisor.
 mod bodies;
 mod cli;
+#[cfg(unix)]
+mod config;
+#[cfg(not(unix))]
+#[path = "config_unsupported.rs"]
 mod config;
 mod connection;
 mod diagnostics;

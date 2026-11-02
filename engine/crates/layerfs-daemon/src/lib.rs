@@ -26,3 +26,5 @@ pub use layerfs_store_service::{
 pub mod control;
 
 pub mod application;
+#[cfg(windows)]
+pub mod native;

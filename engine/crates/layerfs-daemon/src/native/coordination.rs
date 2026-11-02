@@ -1,5 +1,6 @@
 //! One explicit, reversible close coordination; hints never replace namespace identity.
-use super::{refused, Result, Session, Stat};
+use super::session::State as Session;
+use super::{refused, Result, Stat};
 use std::ops::Bound::{Excluded, Included};
 
 impl Session {
@@ -41,6 +42,7 @@ impl Session {
     }
     /// Cleanup is a fact, not permission to release an OpenFile or a view.
     pub fn cleanup_file(&mut self, handle: u64) -> Result<()> {
+        self.accepting()?;
         self.handles
             .get_mut(&handle)
             .ok_or_else(|| refused(0xc0000008, "stale cleanup"))?

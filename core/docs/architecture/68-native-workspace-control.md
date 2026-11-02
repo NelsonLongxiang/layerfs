@@ -4,6 +4,57 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Native Windows logical Session (2026-11-02)
+
+[daemon::native::Session](../../../engine/crates/layerfs-daemon/src/native/session.rs)
+now owns a real direct Store binding, one bound Workspace/Overlay, the logical
+KernelMount, MountRequests, file/directory handle map, Commit admission and
+terminal lifecycle. [Binding](../../../engine/crates/layerfs-daemon/src/native/binding.rs)
+requires explicit catalog/cursor/Branch/Workspace authority. The
+[startup attempt](../../../engine/crates/layerfs-daemon/src/native/startup.rs)
+opens only an existing absolute Store, claims a fresh owner-only local work
+directory, refuses missing/protected-main Branches, and uses the existing bounded
+root bind plus kernel association. It does not import, scan or copy a Store.
+BindFailure keeps the original phase/cause/intent and any initialized owners;
+dropping it never guesses that partial startup can be disposed.
+
+Native operations reuse StoreOperation lookup/Open, Workspace mutations and
+bounded read/directory ports. The adapter preserves separate data/attribute/delete
+access and independent lookup/Open/Cleanup/Close ownership. A typed first unknown
+error and original lookup/Open failure stay shared with the caller and Session;
+later admission is fenced without replay. Status observes logical binding,
+frontier, requests, handle/publication counts and control flags. It proves neither
+WinFsp Ready nor an arbitrary kernel section inventory. Multiple Sessions can be
+held independently in one Rust process; ABI export/discovery remain separate.
+
+[Commit](../../../engine/crates/layerfs-daemon/src/native/commit.rs) consumes one
+explicit published-frontier admission, runs commit_captured outside the Session
+mutex, and returns the exact completion to its original Session. Known results
+retain the original CommitSuccess and installed binding/frontier in CommitReceipt.
+Foreign/panicked/failed completions remain kept; dropping an unconsumed completion
+retains the original result and provider instead of disposing it speculatively.
+Application-visible/cache-section capture still refuses before effects. There is
+no Init fallback, second producer/encoder or independent history refresh in the
+product Commit path; diagnostic immutable reopen verification stays in tools.
+
+[Normal close](../../../engine/crates/layerfs-daemon/src/native/lifecycle.rs) is
+before-effect Busy while file/directory, capture, Commit, coordination, request or
+retained ownership remains. Success fences receives. Only after the caller has
+actually drained/detached its OS service may finish_after_native_drain check product
+request finish, revoke the logical mount and close/retire the Overlay and Store.
+This safe Rust method cannot establish the external native-drain precondition.
+It is attempted once; incomplete/failed/live Session destruction deliberately
+keeps the whole state until process exit. No forced file release or guessed
+publication/rollback is added.
+
+The WinFsp diagnostic now uses this product Session and retains only fixture setup,
+explicit bootstrap framing, captured/history checks and observation logs. Its old
+private Commit/close/metadata/coordination implementations are removed. The daemon
+library now compiles on Windows; the old Unix-protected deployment configuration
+reader remains platform-gated and explicitly Unsupported elsewhere. This does not
+supply a Windows process launcher, authenticated IPC, product native host packaging,
+SDK Sandbox registration or workspace.mount. Those entrypoints remain unsupported.
+
 Bridge control records carry typed Content/History identities and one original
 correlation. They support mount binding, Store-half Commit, status, terminal
 unmount, fork and bounded Commit-history pages. A history window holds at most32

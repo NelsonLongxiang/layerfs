@@ -678,7 +678,30 @@ unloading code behind live callbacks. Direct tests use the public adapter and re
 provider DLL, not a product test hook or fake filesystem.
 
 Existing metadata/access limits and mapping publication gaps remain. WorkspacePort
-still reaches a diagnostic Rust Session; multiple per-mount adapter contexts do not
-prove a multi-Session product process, Sandbox isolation or SDK mounting support.
+reaches the product native Rust Session described below through a diagnostic ABI.
+Per-mount contexts alone do not prove Sandbox isolation or SDK mounting support.
 The native test build accepts -CallbackTests for direct conversion/setup/lifetime
 checks. See the [callback adapter result](../../core/docs/issues/352/WINDOWS-CALLBACK-ADAPTER-2026-11-02.md).
+
+## Product native Rust Session
+
+The bridge now consumes layerfs-daemon::native::Session for actual Store binding,
+logical mount/request/handle ownership, Windows metadata operations, Commit and
+normal close. The diagnostic no longer implements its own filesystem Session;
+only fixture creation, bootstrap frame decoding, independent captured/history
+verification and log formatting remain here. Obsolete private native_commit,
+native_close, native_metadata and native_coordination modules are removed.
+
+Product binding takes explicit authority and a fresh absolute local work path;
+partial failure retains original intent, phase and initialized owners. Live or
+failed Session drop retains its state instead of implicitly revoking a native
+mount. Product Commit runs outside bridge bookkeeping, keeps the exact original
+completion, and returns an installed publication receipt; diagnostic independent
+History reopen remains a separate verification step. Unknown kernel errors retain
+their typed cause with the returned error and fence subsequent admission.
+
+Close still requires real native dispatcher drain/detach before product finish.
+The Rust operation checks product custody only and cannot authenticate the OS
+precondition. SDK Workspace/Sandbox/Exec and normal native process/IPC deployment
+remain unconnected; a product library used through this diagnostic ABI is not an
+SDK-mounted Workspace. See the [native Session result](../../core/docs/issues/352/WINDOWS-NATIVE-SESSION-2026-11-02.md).
