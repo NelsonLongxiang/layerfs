@@ -3,6 +3,7 @@
 use super::{control::emit, process::Shared, CommitScope};
 use layerfs_bridge::sdk_values::unhex;
 use layerfs_history::MAXIMUM_MESSAGE_BYTES;
+use layerfs_store_service::store::CommitOptions;
 use std::io;
 pub(super) const CONTROL_BYTES: usize = 128 + MAXIMUM_MESSAGE_BYTES * 2;
 fn message(text: &str) -> Option<Option<String>> {
@@ -16,6 +17,11 @@ fn message(text: &str) -> Option<Option<String>> {
     }
 }
 pub(super) fn run(shared: &Shared, id: u64, words: &[&str]) -> io::Result<()> {
+    let (words, force) = match words {
+        [body @ .., "force", "true"] => (body, true),
+        [body @ .., "force", "false"] => (body, false),
+        _ => (words, false),
+    };
     let selected = match words {
         [_, "commit", "published"] => {
             Some((false, Some("Windows published Workspace frontier".into())))
@@ -41,7 +47,7 @@ pub(super) fn run(shared: &Shared, id: u64, words: &[&str]) -> io::Result<()> {
         session
             .as_mut()
             .ok_or_else(|| io::Error::other("Session closed"))?
-            .begin_commit_message(CommitScope::Published, message)
+            .begin_commit_with(CommitScope::Published, CommitOptions { force, message })
     };
     let work = match work {
         Ok(work) => work,

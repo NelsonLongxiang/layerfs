@@ -152,10 +152,15 @@ export class NativeSession {
         },
         commit: (scope, details = false, ...metadata) => {
           if (scope !== "published" || typeof details !== "boolean") return Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit published scope; application-visible mapping capture is unsupported", null));
-          if (metadata.length > 1) return Promise.reject(new LayerFSError("InvalidInput", "native Commit takes one optional message", null));
+          if (metadata.length > 2) return Promise.reject(new LayerFSError("InvalidInput", "native Commit takes optional message and force", null));
           let fields = {};
           try { if (metadata.length) fields = { hasMessage: true, message: checkedMessage(metadata[0]) }; }
           catch (cause) { return Promise.reject(cause); }
+          if (metadata.length > 1) {
+            const force = metadata[1] === undefined ? false : metadata[1];
+            if (typeof force !== "boolean") return Promise.reject(new LayerFSError("InvalidInput", "force must be boolean", null));
+            fields = { ...fields, hasForce: true, force };
+          }
           return this.#call(details ? "publication" : "commit", fields);
         },
         unmount: (discard = true) => typeof discard === "boolean" ? this.#call(discard ? "unmount" : "unmount-clean") : Promise.reject(new LayerFSError("InvalidInput", "native unmount discard must be boolean", null)),
@@ -256,7 +261,7 @@ export class NativeSession {
     }
     const id = this.#next.toString();
     const metadata = fields.hasMessage ? " message " + (fields.message === undefined ? "none" : fields.message === "" ? "-" : Buffer.from(fields.message, "utf8").toString("hex")) : "";
-    const p = { ...deferred(), id, kind, ...fields, request: id + " " + (kind === "reference" ? "reference " + fields.after + " " + fields.offset : kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + metadata + "\n", answered: false };
+    const p = { ...deferred(), id, kind, ...fields, request: id + " " + (kind === "reference" ? "reference " + fields.after + " " + fields.offset : kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + metadata + (fields.hasForce ? " force " + fields.force : "") + "\n", answered: false };
     this.#pending.set(id, p);
     if (["unmount", "unmount-clean"].includes(kind)) this.#state = "unmounting";
     try { this.#child.stdin.write(p.request, (cause) => { if (cause) this.#retain("native command transfer failed; original request retained", cause, p); }); }

@@ -42,9 +42,10 @@ try{
  }else if(selected==='message-forwarding'){
   const ws=await shop.workspace.mount(registration.sandbox,'feature'),marker=join(out,'session-calls.json');
   for(const message of [null,1,{},'x'.repeat(4097),'a\0b','x\r','\u0085','\ud800']){const before=existsSync(marker)?readFileSync(marker,'utf8'):null;await assert.rejects(shop.workspace.commit(ws,message),{code:'InvalidInput'});assert.equal(existsSync(marker)?readFileSync(marker,'utf8'):null,before);}
-  await assert.rejects(shop.workspace.commit(ws,'valid',true),{code:'Unsupported'});
-  for(const message of ['Unicode 雪😀\n\t retained','',undefined,'x'.repeat(4096)]){const receipt=await shop.workspace.commit(ws,message);assert.equal(receipt.kind,'Committed');const line=JSON.parse(readFileSync(marker,'utf8')).line;const expected=message===undefined?'none':message===''?'-':Buffer.from(message).toString('hex');assert.ok(line.endsWith(' commit published identity message '+expected));}
-  await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'message-forwarded',utf8:true,maximumBytes:4096,invalidBeforeEffect:true,forceRefused:true});
+  for(const force of [null,0,1,'true',{},[]]){const before=existsSync(marker)?readFileSync(marker,'utf8'):null;await assert.rejects(shop.workspace.commit(ws,'valid',force),{code:'InvalidInput'});assert.equal(existsSync(marker)?readFileSync(marker,'utf8'):null,before);}
+  for(const message of ['Unicode 雪😀\n\t retained','',undefined,'x'.repeat(4096)]){const receipt=await shop.workspace.commit(ws,message);assert.equal(receipt.kind,'Committed');const line=JSON.parse(readFileSync(marker,'utf8')).line;const expected=message===undefined?'none':message===''?'-':Buffer.from(message).toString('hex');assert.ok(line.endsWith(' commit published identity message '+expected+' force false'));}
+  const forced=await shop.workspace.commit(ws,'explicit force',true);assert.equal(forced.kind,'Committed');assert.ok(JSON.parse(readFileSync(marker,'utf8')).line.endsWith(' message '+Buffer.from('explicit force').toString('hex')+' force true'));
+  await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'message-forwarded',utf8:true,maximumBytes:4096,invalidBeforeEffect:true,strictForce:true});
  }else if(selected==='mixed'){
   const ws={sandbox:registration.sandbox,path:directBefore.path};
   assert.equal(resolve(directBefore.path),resolve(join(out,'layerfs-'+instance.id+'-1-mount')));

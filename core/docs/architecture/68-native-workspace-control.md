@@ -263,11 +263,15 @@ status, commit published, and unmount; each reply carries the original id. Contr
 records have an 8320-byte processing bound: 128 bytes of command overhead plus
 hex encoding of the existing 4096-byte Commit message field. The
 [Commit control](../../../engine/crates/layerfs-daemon/src/native/control_commit.rs)
-accepts exactly one optional UTF-8 message, validates it through History before
-capture and passes it to the original CommitWork/Store CommitOptions. No multipart
-state or second metadata owner is introduced. Explicit messages remain with the
-original completion until checked settlement; failed/unknown work keeps that
-completion and exact metadata. Omitted SDK metadata selects the existing Store
+accepts one optional UTF-8 message and a canonical optional force true/false suffix,
+validates metadata through History before capture and passes the original options
+to CommitWork/Store CommitOptions. No multipart state or second options owner is
+introduced. The existing Store alone implements merge versus overwrite; force
+keeps the bound parent, skips head merging and reports displacement without
+changing Session/capture/close admission. Original completion keeps both selected
+options and outcome until checked settlement; failures/unknown work retain them.
+The native completion checks explicit message, original parent/merge provenance
+and agreement between the original displaced result and record metadata. Omitted SDK metadata selects the existing Store
 Workspace default; legacy direct calls without the new field keep their original
 native default. UpToDate never publishes metadata-only history. Path/data transfers
 use separate bounded frames, not a total Workspace/file/flow limit. A failed command

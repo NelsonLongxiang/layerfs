@@ -91,10 +91,11 @@ filesystem path substitution race.
 `root`, revision/count fields from `status` and Commit revision are `bigint`
 so 64-bit values are not rounded. `commit("published")` returns
 `{ changed, revision, scope: "published", published: true }`. No omitted/default
-scope, force or application-visible mapping capture is inferred. An optional third
-argument on `commit("published", details, message)` supplies the same bounded
-message as the SDK. Omitting that third argument preserves the legacy native
-default; explicitly passing `undefined` selects the Store Workspace default.
+scope or application-visible mapping capture is inferred. Optional third/fourth
+arguments on `commit("published", details, message, force)` supply the same bounded
+message and strict boolean publication policy as the SDK. Force defaults false.
+Omitting the message argument preserves the legacy native default; explicitly
+passing `undefined` selects the Store Workspace default.
 
 ### Native reference observation
 
@@ -225,8 +226,9 @@ The returned { sandbox, image: null, mode: "windows-restricted" } names this
 instance on those clients. project.list_sandboxes and sandbox.list_workspaces
 report it explicitly in that native mode. It is not a container-image creation:
 sandbox.create(image) stays Unsupported. workspace.exec’s Bash command contract,
-background process APIs, forced unmount and force-Commit remain Unsupported.
-Commit messages use the ordinary SDK validation and semantics described below. Explicit native command objects below delegate the original
+background process APIs and forced unmount remain Unsupported. Commit messages
+and explicit force publication use the ordinary SDK interface described below.
+Explicit native command objects below delegate the original
 Session command owner; the SDK registration does not pretend that Windows
 argument-vector execution is Bash.
 
@@ -260,7 +262,25 @@ null, non-text, unpaired surrogates and over-limit messages refuse InvalidInput
 before native admission. Empty text stays empty. Omitted or undefined SDK messages
 use the Store's existing "Commit Workspace changes" default, not the former native
 hard-coded description. A message alone never creates a Commit: UpToDate keeps the
-same head/root and History. Force remains Unsupported.
+same head/root and History.
+
+SDK workspace.commit(ws, message, force = false) requires a boolean force value;
+null, strings, numbers and objects refuse InvalidInput before the binding. Native
+control independently accepts only canonical true/false. With false, a moved
+Branch head is handled by the existing Store merge. With true, the original Store
+publishes the Workspace's complete captured view instead of merging the moved
+head, keeping its captured parent and reporting the head it displaced. This may
+remove paths introduced only by the intervening publication, but the displaced
+Commit stays readable through History. No Session/capture admission, publication
+lane or close check is bypassed; this is not forced unmount.
+
+An unchanged but stale view can intentionally replace a different current root
+with force. Once the current root equals that candidate, a further forced Commit
+is UpToDate and does not manufacture history merely for the flag or message.
+Original completion custody includes both force and message; lost/unknown outcomes
+are never retried. The native receipt reports original parent/displacedHead/merged
+identities rather than inferring them from a later History lookup. See the
+[force publication evidence](../../core/docs/issues/352/WINDOWS-NATIVE-COMMIT-FORCE-2026-11-03.md).
 
 The same inherited owner channel carries one length-bounded ASCII control record:
 hex encodes the message so newline/tab cannot become commands. The processing
@@ -269,7 +289,8 @@ bound (8320 bytes total); it is not a new file/Workspace/flow limit. No multipar
 upload state, temporary message file, network listener, Store RPC, decoder fallback
 or failed-operation replay is added. Native History validation is reused before
 capture. The original completion keeps the selected message and outcome together
-through failure/uncertainty; known publication checks its explicit message before
+through failure/uncertainty; force remains in those original options as well.
+Known publication checks its explicit message and overwrite/merge provenance before
 releasing that owner. Read History for actual persisted metadata; the native
 publication receipt's identity fields are not reconstructed from a later lookup.
 See the [message implementation record](../../core/docs/issues/352/WINDOWS-NATIVE-COMMIT-MESSAGE-2026-11-03.md).

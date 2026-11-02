@@ -129,6 +129,14 @@ impl Session {
     ) -> Result<CommitWork> {
         self.attempt(|s| s.begin_commit_message(scope, message))
     }
+    /// Use the original Store publication policy without bypassing Session admission.
+    pub fn begin_commit_with(
+        &mut self,
+        scope: CommitScope,
+        options: layerfs_store_service::store::CommitOptions,
+    ) -> Result<CommitWork> {
+        self.attempt(|s| s.begin_commit_with(scope, options))
+    }
     pub fn complete_commit(&mut self, completion: CommitCompletion) -> Result<CommitReceipt> {
         self.attempt(|s| s.complete_commit(completion))
     }

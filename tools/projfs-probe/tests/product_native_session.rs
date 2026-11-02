@@ -414,34 +414,166 @@ fn product_commit_message_is_exact_bounded_and_does_not_create_uptodate_history(
 }
 #[test]
 fn native_failure_retains_original_commit_completion_and_message_without_release_or_replay() {
-    let (_root, _fixture, mut s) = start("commit-message-retained");
-    let (file, _) = s.create_file("/uncertain").unwrap();
-    s.close_file(file).unwrap();
-    let work = s
-        .begin_commit_message(
-            CommitScope::Published,
-            Some("retain original metadata 雪".into()),
-        )
-        .unwrap();
-    let op = s.operation().unwrap();
-    op.overlay()
-        .kernel_revoke(op.workspace().route(), s.mount())
-        .unwrap();
-    drop(op);
-    let failure = s.open("/alpha.txt", false).err().unwrap();
-    assert_eq!(failure.status as u32, 0xc0000001);
-    assert!(std::error::Error::source(&failure).is_some());
-    let error = s.complete_commit(work.run()).err().unwrap();
-    assert_eq!(error.status as u32, 0xc0000001);
-    assert_eq!(s.close_state().retained, 1);
-    assert_eq!(s.close_state().pending_commit, 1);
-    assert_eq!(
-        s.begin_commit_message(CommitScope::Published, Some("must not replay".into()))
-            .err()
+    use layerfs_store_service::store::CommitOptions;
+    for force in [false, true] {
+        let (_root, _fixture, mut s) = start(if force {
+            "forced-message-retained"
+        } else {
+            "commit-message-retained"
+        });
+        let (file, _) = s.create_file("/uncertain").unwrap();
+        s.close_file(file).unwrap();
+        let work = s
+            .begin_commit_with(
+                CommitScope::Published,
+                CommitOptions {
+                    force,
+                    message: Some("retain original metadata 雪".into()),
+                },
+            )
+            .unwrap();
+        let op = s.operation().unwrap();
+        op.overlay()
+            .kernel_revoke(op.workspace().route(), s.mount())
+            .unwrap();
+        drop(op);
+        let failure = s.open("/alpha.txt", false).err().unwrap();
+        assert_eq!(failure.status as u32, 0xc0000001);
+        assert!(std::error::Error::source(&failure).is_some());
+        let error = s.complete_commit(work.run()).err().unwrap();
+        assert_eq!(error.status as u32, 0xc0000001);
+        assert_eq!(s.close_state().retained, 1);
+        assert_eq!(s.close_state().pending_commit, 1);
+        for next_force in [false, true] {
+            assert_eq!(
+                s.begin_commit_with(
+                    CommitScope::Published,
+                    CommitOptions {
+                        force: next_force,
+                        message: Some("must not replay".into())
+                    }
+                )
+                .err()
+                .unwrap()
+                .status as u32,
+                0xc0000001
+            );
+        }
+        assert!(s.prepare_close().is_err());
+        assert!(s.finish_after_native_drain().is_err());
+    }
+}
+
+#[test]
+fn product_force_uses_original_publication_policy_and_preserves_admission() {
+    use layerfs_store_service::store::CommitOptions;
+    for force in [false, true] {
+        let (root, fixture, mut a) = start(if force {
+            "force-overwrite"
+        } else {
+            "force-merge"
+        });
+        let (held, _) = a.create_file("/seed-marker").unwrap();
+        a.close_file(held).unwrap();
+        let work = a.begin_commit(CommitScope::Published).unwrap();
+        let seed = a
+            .complete_commit(work.run())
             .unwrap()
-            .status as u32,
-        0xc0000001
-    );
-    assert!(s.prepare_close().is_err());
-    assert!(s.finish_after_native_drain().is_err());
+            .installed
+            .branch
+            .head_commit;
+        let mut b =
+            Session::bind_existing(&fixture.store, &root.join("second"), binding(96)).unwrap();
+        let (head, _) = a.create_file("/head-only").unwrap();
+        a.write(head, 0, b"head", false, false).unwrap();
+        a.close_file(head).unwrap();
+        let work = a.begin_commit(CommitScope::Published).unwrap();
+        let first = a.complete_commit(work.run()).unwrap();
+        let (local, _) = b.create_file("/local-only").unwrap();
+        b.write(local, 0, b"local", false, false).unwrap();
+        b.close_file(local).unwrap();
+        let options = CommitOptions {
+            force,
+            message: Some("original policy 雪".into()),
+        };
+        let before = b.close_state();
+        assert_eq!(
+            b.begin_commit_with(CommitScope::ApplicationVisible, options.clone())
+                .err()
+                .unwrap()
+                .status as u32,
+            0xc00000bb
+        );
+        assert_eq!(b.close_state(), before);
+        let token = b.begin_close_coordination().unwrap();
+        assert_eq!(
+            b.begin_commit_with(CommitScope::Published, options.clone())
+                .err()
+                .unwrap()
+                .status as u32,
+            0x80000011
+        );
+        b.end_close_coordination(token, false).unwrap();
+        let work = b
+            .begin_commit_with(CommitScope::Published, options.clone())
+            .unwrap();
+        let admitted = b.close_state();
+        assert_eq!(admitted.pending_commit, 1);
+        assert_eq!(
+            b.begin_commit_with(CommitScope::Published, options)
+                .err()
+                .unwrap()
+                .status as u32,
+            0x80000011
+        );
+        assert_eq!(b.close_state(), admitted);
+        let receipt = b.complete_commit(work.run()).unwrap();
+        match receipt.success.history.as_ref().unwrap() {
+            CommitOutcome::Committed { record, displaced } => {
+                assert_eq!(record.meta.message.as_deref(), Some("original policy 雪"));
+                assert_eq!(
+                    record.parent,
+                    if force {
+                        seed
+                    } else {
+                        first.installed.branch.head_commit
+                    }
+                );
+                assert_eq!(
+                    *displaced,
+                    if force {
+                        first.installed.branch.head_commit
+                    } else {
+                        None
+                    }
+                );
+                assert_eq!(record.meta.displaced, *displaced);
+            }
+            other => panic!("expected original publication, got {other:?}"),
+        }
+        assert_eq!(receipt.success.merge.is_none(), force);
+        if force {
+            assert_eq!(
+                b.stat_path("/head-only").err().unwrap().status as u32,
+                0xc0000034
+            );
+        } else {
+            assert_eq!(b.stat_path("/head-only").unwrap().size, 4);
+        }
+        let head = receipt.installed.branch.head_commit;
+        let work = b
+            .begin_commit_with(
+                CommitScope::Published,
+                CommitOptions {
+                    force: true,
+                    message: Some("no metadata-only force".into()),
+                },
+            )
+            .unwrap();
+        let unchanged = b.complete_commit(work.run()).unwrap();
+        assert!(!unchanged.changed);
+        assert_eq!(unchanged.installed.branch.head_commit, head);
+        finish(&mut a);
+        finish(&mut b);
+    }
 }

@@ -38,12 +38,17 @@ try{
   session=await runtime.native.open(input);assert.equal(Object.isFrozen(session),true);
   await assert.rejects(runtime.close(),{code:"Busy"});assert.equal(runtime.closed,false);
   await assert.rejects(session.commit(),{code:"Unsupported"});assert.equal(existsSync(marker),false);
-  if(selected.startsWith('message-')){
+  if(selected.startsWith('force-')){
+   if(selected==='force-refused'){await assert.rejects(session.commit('published',true,'force original',true),{code:'InvalidInput'});assert.ok(JSON.parse(readFileSync(marker,'utf8')).line.endsWith(' force true'));assert.equal((await session.status()).root,1n);await session.unmount();await runtime.close();}
+   else {await assert.rejects(session.commit('published',true,'force original',true),{code:'Unknown'});await assert.rejects(session.commit('published',true,'must not replay',true),{code:'Unknown'});const original=JSON.parse(readFileSync(marker,'utf8'));assert.equal(original.calls,1);assert.ok(original.line.endsWith(' force true'));await assert.rejects(runtime.close(),{code:'Unknown'});}
+  }else if(selected.startsWith('message-')){
    for(const message of [null,1,{},'x'.repeat(4097),'a\0b','x\r','\u0085','\ud800'])await assert.rejects(session.commit('published',true,message),{code:'InvalidInput'});
+   for(const force of [null,0,1,'true',{},[]])await assert.rejects(session.commit('published',true,'valid',force),{code:'InvalidInput'});
    assert.equal(existsSync(marker),false);
    if(selected==='message-valid'){
     const messages=['unicode 雪😀\n\t 1 unmount discard','',undefined,'界'.repeat(1365)+'x'];
     for(const message of messages){const answer=await session.commit('published',true,message);assert.equal(answer.changed,true);const log=JSON.parse(readFileSync(marker,'utf8'));const encoded=message===undefined?'none':message===''?'-':Buffer.from(message).toString('hex');assert.equal(log.line,log.calls+' commit published identity message '+encoded);}
+    for(const force of [false,true,undefined]){const answer=await session.commit('published',true,'force bit',force);assert.equal(answer.changed,true);const log=JSON.parse(readFileSync(marker,'utf8'));assert.equal(log.line,log.calls+' commit published identity message '+Buffer.from('force bit').toString('hex')+' force '+(force??false));}
     const legacy=await session.commit('published',true);assert.equal(legacy.changed,true);const log=JSON.parse(readFileSync(marker,'utf8'));assert.equal(log.line,log.calls+' commit published identity');await session.unmount();await runtime.close();
    }else if(selected==='message-refused'){await assert.rejects(session.commit('published',true,'valid'),{code:'InvalidInput'});assert.equal((await session.status()).root,1n);await session.unmount();await runtime.close();}
    else {await assert.rejects(session.commit('published',true,'one-original-message'),{code:'Unknown'});await assert.rejects(session.commit('published',true,'do-not-replay'),{code:'Unknown'});assert.equal(JSON.parse(readFileSync(marker,'utf8')).calls,1);await assert.rejects(runtime.close(),{code:'Unknown'});}

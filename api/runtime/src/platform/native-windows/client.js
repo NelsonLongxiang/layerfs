@@ -67,9 +67,10 @@ export class NativeClientRoute {
       return { value: await this.#use(args, (session) => session.handle().exec(input.executable, input.args, input.env === undefined ? {} : { env: input.env })) };
     }
     if (op === "workspace.commit") {
-      if (args.force) throw new LayerFSError("Unsupported", "native forced Commit is not implemented", null);
+      const force = args.force === undefined ? false : args.force;
+      if (typeof force !== "boolean") throw new LayerFSError("InvalidInput", "force must be boolean", null);
       const message = checkedMessage(args.message);
-      const value = await this.#use(args, (session) => session.handle().commit("published", true, message));
+      const value = await this.#use(args, (session) => session.handle().commit("published", true, message, force));
       return { value: { ...value, kind: value.changed ? "Committed" : "UpToDate", mode } };
     }
     await this.#running(args.sandbox);

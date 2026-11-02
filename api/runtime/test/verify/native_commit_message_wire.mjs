@@ -23,7 +23,8 @@ try{
  child.stdin.write(binding);assert.match(await line(),/^NATIVE_SERVICE_ROOT_SERVED /);const before=await command('state');
  const invalid=['zz','f','c080','eda080','00','0d','c285','78'.repeat(4097),'78 trailing-token'];
  for(const encoded of invalid){const answer=await command('commit published identity message '+encoded);assert.match(answer,/status=c000000d$/);assert.equal(stateKey(await command('state')),stateKey(before));}
- for(const encoded of ['-','none',Buffer.from('界'.repeat(1365)+'x').toString('hex')])assert.match(await command('commit published identity message '+encoded),/changed=false .*published=true$/);
- assert.equal(stateKey(await command('state')),stateKey(before));assert.match(await command('unmount clean'),/native_exit=0 .*overlay_closed=true$/);const end=await closed;assert.deepEqual(end,{code:0,signal:null});assert.equal(pending,'');console.log('PASS original message wire: 9 exact rejections, 3 clean UpToDate replies and normal terminal');
+ for(const force of ['TRUE','1','null','true force false']){assert.match(await command('commit published identity message none force '+force),/status=c000000d$/);assert.equal(stateKey(await command('state')),stateKey(before));}
+ for(const encoded of ['-','none',Buffer.from('界'.repeat(1365)+'x').toString('hex')])for(const suffix of ['',' force false',' force true'])assert.match(await command('commit published identity message '+encoded+suffix),/changed=false .*published=true$/);
+ assert.equal(stateKey(await command('state')),stateKey(before));assert.match(await command('unmount clean'),/native_exit=0 .*overlay_closed=true$/);const end=await closed;assert.deepEqual(end,{code:0,signal:null});assert.equal(pending,'');console.log('PASS original message wire: 13 exact rejections, 9 clean UpToDate replies and normal terminal');
 }catch(e){failure={message:e.message};throw e;}
 finally{writeFileSync(join(out,'result.json'),JSON.stringify({status:failure?'FAIL':'PASS original inherited message validation',read_at:new Date().toISOString(),identity,failure,requests,received,stderr,mountExists:existsSync(join(out,'mount')),closedFixture:fixture},null,2));}

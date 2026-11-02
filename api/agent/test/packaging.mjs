@@ -52,6 +52,9 @@ if (selected === "surface") {
     "STATE", "addonPath", "bindClientControl", "checkedMessage", "connection", "decode", "deployment", "encode", "endpointOf", "frame", "invokeBackend", "invokeClient",
     "invokeClientBackend", "live", "outcome", "page", "pageOf", "projectArgs", "readFrames", "sandboxArg", "storeArgs", "useWorker", "workspaceArgs",
   ]);
+  const beforeCommit = native.calls.length;
+  for (const force of [null, 0, 1, "true", {}, []]) await assert.rejects(shop.workspace.commit({ sandbox: "1", path: "/workspace" }, "valid", force), { code: "InvalidInput" });
+  assert.equal(native.calls.length, beforeCommit, "invalid force never reaches any binding");
   await shop.close();
 } else if (selected === "lifecycle") {
   // no public constructor

@@ -27,11 +27,11 @@ process.stdin.on("data",chunk=>{
  }
  let at;
  while((at=input.indexOf(10))>=0){const line=input.subarray(0,at).toString();input=input.subarray(at+1);const [id,word]=line.split(" ");calls++;writeFileSync(log,JSON.stringify({calls,line}),{flag:"w"});
-  if(mode.startsWith('message-')){
+  if(mode.startsWith('message-')||mode.startsWith('force-')){
    if(word!=='commit'){normal(id,word);continue;}
-   if(mode==='message-refused')send('NATIVE_SERVICE_REFUSED id='+id+' status=c000000d\n');
-   else if(mode==='message-foreign'){send(publication(String(BigInt(id)+1n)));process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
-   else if(mode==='message-eof'){process.stdout.end();process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
+   if(mode==='message-refused'||mode==='force-refused')send('NATIVE_SERVICE_REFUSED id='+id+' status=c000000d\n');
+   else if((mode==='message-foreign'||mode==='force-foreign')){send(publication(String(BigInt(id)+1n)));process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
+   else if((mode==='message-eof'||mode==='force-eof')){process.stdout.end();process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
    else send(publication(id));
    continue;
   }

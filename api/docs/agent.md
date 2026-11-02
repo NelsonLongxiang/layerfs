@@ -357,6 +357,15 @@ publication merges with it once: different paths are `Committed`; a path both
 changed is refused as `Conflict` (`detail.conflicts`, `detail.head`) with nothing
 committed. Nothing is resent or merged again.
 
+workspace.commit(ws, message, force = false) validates force as a boolean before
+any binding call; other value types are InvalidInput. Explicit true selects the
+existing Store overwrite policy instead of merging a moved head: the candidate
+keeps the Workspace's captured parent and records the displaced head. This can
+replace intervening-only paths; it neither deletes their old Commit nor forces
+filesystem teardown. False and omitted/undefined use the normal merge policy.
+Native Windows support and its separate limitations are in the
+[runtime contract](runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
+
 A write's file body (`write` content or bytes, in `fs.write` and `fs.apply`)
 travels in the call itself: Store calls run in this process, so no control
 record bounds it. The engine writes it into the call's private Workspace a

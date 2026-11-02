@@ -13,7 +13,7 @@ pub struct CommitWork {
     bound: Arc<BoundWorkspace>,
     token: u64,
     before: BranchSnapshot,
-    message: Option<String>,
+    options: CommitOptions,
 }
 #[must_use = "settle the original completion without replay"]
 pub struct CommitCompletion {
@@ -23,7 +23,7 @@ struct Completion {
     bound: Arc<BoundWorkspace>,
     token: u64,
     before: BranchSnapshot,
-    message: Option<String>,
+    options: CommitOptions,
     outcome: std::thread::Result<std::result::Result<CommitSuccess, Arc<CommitFailure>>>,
 }
 pub struct CommitReceipt {
@@ -36,10 +36,7 @@ pub struct CommitReceipt {
 }
 impl CommitWork {
     pub fn run(self) -> CommitCompletion {
-        let options = CommitOptions {
-            force: false,
-            message: self.message,
-        };
+        let options = self.options;
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             self.bound.commit_captured(&options).map_err(Arc::from)
         }));
@@ -48,7 +45,7 @@ impl CommitWork {
                 bound: self.bound,
                 token: self.token,
                 before: self.before,
-                message: options.message,
+                options,
                 outcome,
             })),
         }
@@ -72,8 +69,21 @@ impl State {
         scope: CommitScope,
         message: Option<String>,
     ) -> Result<CommitWork> {
+        self.begin_commit_with(
+            scope,
+            CommitOptions {
+                force: false,
+                message,
+            },
+        )
+    }
+    pub(super) fn begin_commit_with(
+        &mut self,
+        scope: CommitScope,
+        mut options: CommitOptions,
+    ) -> Result<CommitWork> {
         let mut metadata = layerfs_history::CommitMeta::new(CommitVia::Workspace);
-        metadata.message = message;
+        metadata.message = options.message.take();
         metadata
             .check()
             .map_err(|e| refused(0xc000000d, &e.to_string()))?;
@@ -97,7 +107,10 @@ impl State {
             bound: self.bound.clone(),
             token,
             before,
-            message: metadata.message,
+            options: CommitOptions {
+                message: metadata.message,
+                ..options
+            },
         })
     }
     pub(super) fn retain_completion(&mut self, completion: CommitCompletion) {
@@ -141,7 +154,7 @@ impl State {
             }
         };
         let before = &original.before;
-        let message = &original.message;
+        let options = &original.options;
         let checked = (|| {
             if success
                 .namespace
@@ -153,7 +166,10 @@ impl State {
             let installed = self.bound.snapshot().map_err(workspace_error)?;
             let expected_parent = match &success.merge {
                 Some(m) => {
-                    if m.from != before.branch.head_commit || !m.conflicts.is_empty() {
+                    if options.force
+                        || m.from != before.branch.head_commit
+                        || !m.conflicts.is_empty()
+                    {
                         return Err(failed("unexpected merge provenance"));
                     }
                     m.head
@@ -161,10 +177,13 @@ impl State {
                 None => before.branch.head_commit,
             };
             let changed = match &success.history {
-                Some(CommitOutcome::Committed { record, .. }) => {
-                    if message
+                Some(CommitOutcome::Committed { record, displaced }) => {
+                    if options
+                        .message
                         .as_deref()
                         .is_some_and(|text| record.meta.message.as_deref() != Some(text))
+                        || record.meta.displaced != *displaced
+                        || (!options.force && displaced.is_some())
                         || record.meta.via != CommitVia::Workspace
                         || record.parent != expected_parent
                         || record.meta.branch != Some(self.binding.branch)
