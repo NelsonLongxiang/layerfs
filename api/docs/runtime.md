@@ -239,7 +239,10 @@ argument-vector execution is Bash.
 
 workspace.mount requires that named original instance still running, uses its
 existing mount implementation and admits at most 16 original Workspace owners
-across both SDK and direct entrypoints, including pending admissions. The shared
+across both SDK and direct entrypoints, including pending admissions. The count
+belongs to the original instance, so every client registered on it shares the same
+sixteen slots; the seventeenth admission refuses Capacity without disturbing the
+existing owners, and a freed slot is immediately reusable. The shared
 owner claims capacity before awaiting, rather than each caller counting its own
 registry. A closed filesystem whose command streams remain owned is not listed
 as a mounted Workspace; it still occupies original ownership and prevents close.

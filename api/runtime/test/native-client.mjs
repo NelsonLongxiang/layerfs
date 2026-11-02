@@ -53,6 +53,22 @@ try{
   for(const message of ['Unicode 雪😀\n\t retained','',undefined,'x'.repeat(4096)]){const receipt=await shop.workspace.commit(ws,message);assert.equal(receipt.kind,'Committed');const line=JSON.parse(readFileSync(marker,'utf8')).line;const expected=message===undefined?'none':message===''?'-':Buffer.from(message).toString('hex');assert.ok(line.endsWith(' commit published identity message '+expected+' force false'));}
   const forced=await shop.workspace.commit(ws,'explicit force',true);assert.equal(forced.kind,'Committed');assert.ok(JSON.parse(readFileSync(marker,'utf8')).line.endsWith(' message '+Buffer.from('explicit force').toString('hex')+' force true'));
   await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'message-forwarded',utf8:true,maximumBytes:4096,invalidBeforeEffect:true,strictForce:true});
+ }else if(selected==='capacity'){
+  const ws=await shop.workspace.mount(registration.sandbox,'feature');
+  const mounted=[ws];
+  for(let n=2;n<=16;n++)mounted.push(await shop.workspace.mount(registration.sandbox,'feature'));
+  assert.equal(new Set(mounted.map(m=>m.path)).size,16);
+  assert.equal((await instance.status()).sessions,16);
+  const before=await LayerFSBackend.of(shop).daemon.workspace.status(ws);
+  await assert.rejects(shop.workspace.mount(registration.sandbox,'feature'),{code:'Capacity'});
+  // The refusal is reversible: the sixteen owners are untouched and a freed slot is reusable.
+  assert.equal((await instance.status()).sessions,16);
+  assert.deepEqual(await LayerFSBackend.of(shop).daemon.workspace.status(ws),before);
+  await shop.workspace.unmount(mounted[15],true);
+  assert.equal((await instance.status()).sessions,15);
+  const reused=await shop.workspace.mount(registration.sandbox,'feature');assert.equal((await instance.status()).sessions,16);
+  for(const m of [...mounted.slice(0,15),reused])await shop.workspace.unmount(m,true);
+  await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'capacity',owners:16,refusal:'Capacity',reversible:true});
  }else if(selected==='two-clients'){
   const ws=await shop.workspace.mount(registration.sandbox,'feature');
   const second=await runtime.native.bindClient(plain,instance,{commitScope:'published'});
