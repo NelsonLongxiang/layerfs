@@ -1,0 +1,14 @@
+# Retained original resident Windows instance lifecycle
+
+> Status: Retained evidence criteria; not a fresh execution, complete product qualification or signed release.
+
+Author self-review is not independent arbitration. SQL facts require paired raw-artifact audit; snapshots preserve old leaves and original source/read times. Hashes check byte consistency, not arbitrary producer honesty.
+
+I1 原生实例证据必须保留原source commit、tested tree、读取时间及实际原resident PID；不是容器镜像或机器级发现。
+I2 实际resident必须先running且初始Session为0；两个同时挂载的原测试断言和同一private desktop观察必须保持，不造替代实例。
+I3 活动Session关闭应拒绝MountsActive，closed实例再mount应作用前拒绝且不得自动启动；保留原断言层级。
+I4 原resident创建命令必须保退出7及原process handle明确取消1223，300023字节binary新挂载和SDK读回保持原测试断言；token handle不得导出。
+I5 两挂载明确卸载后Session归零，原token和desktop句柄检查释放、原resident正常退出0才确认关闭，不以根exit当全内核排空。
+I6 十四个实例协议、十三个直接或handoff回执和十一个真实control用例必须保留各自原始结果，失联及矛盾创建不得当明确失败释放。
+I7 兄弟进程借token的旧1314及原真实测试FAIL必须保留；修正为原owner创建，不提升权限、不重建token或重放失败操作。
+I8 实例叶必须保145份原件和配套raw audit，SDK容器Sandbox资格和完整host隔离仍0，不覆盖历史Git或Workspace FAIL。

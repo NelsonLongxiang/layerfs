@@ -1,0 +1,296 @@
+[
+  {
+    "source_clause": "P1 产品证据必须保留各自source commit、tested tree、原读取时间及混合身份声明；本次导入不是新挂载或编译签名。",
+    "anchor": {
+      "quote": "P1 产品证据必须保留各自source commit、tested tree、原读取时间及混合身份声明；本次导入不是新挂载或编译签名。",
+      "locator": "product.md#P1"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "identity_checked",
+              "op": "=",
+              "value": 1
+            },
+            {
+              "col": "source_commit",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "col": "tested_tree",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "col": "observed_at",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "col": "execution_at",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "col": "raw_audit_required",
+              "op": "=",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P2 已注册项目必须真实SDK Init并以项目权限打开原生Session，调用方不导出catalog/cursor；SDK读回恰一条Commit且base匹配fork。",
+    "anchor": {
+      "quote": "P2 已注册项目必须真实SDK Init并以项目权限打开原生Session，调用方不导出catalog/cursor；SDK读回恰一条Commit且base匹配fork。",
+      "locator": "product.md#P2"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "registered_init",
+              "op": "=",
+              "value": 1
+            },
+            {
+              "col": "authority_exported",
+              "op": "=",
+              "value": 0
+            },
+            {
+              "col": "sdk_commits",
+              "op": "=",
+              "value": 1
+            },
+            {
+              "col": "commit_base_matches",
+              "op": "=",
+              "value": 1
+            },
+            {
+              "col": "record_tests",
+              "op": "=",
+              "value": 6
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P3 原独立History必须逐字节验证300023字节非零binary与head/root，重挂载仍保留原测试断言层级而不伪造独立清单。",
+    "anchor": {
+      "quote": "P3 原独立History必须逐字节验证300023字节非零binary与head/root，重挂载仍保留原测试断言层级而不伪造独立清单。",
+      "locator": "product.md#P3"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "history_exact_binary",
+              "op": "=",
+              "value": 300023
+            },
+            {
+              "col": "assertion_based_remount",
+              "op": "=",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P4 命令两路输出必须各2097183字节精确且原退出码9保留，九项原执行用例通过；命令退出不得隐式Commit。",
+    "anchor": {
+      "quote": "P4 命令两路输出必须各2097183字节精确且原退出码9保留，九项原执行用例通过；命令退出不得隐式Commit。",
+      "locator": "product.md#P4"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "output_bytes",
+              "op": "=",
+              "value": 2097183
+            },
+            {
+              "col": "root_exit",
+              "op": "=",
+              "value": 9
+            },
+            {
+              "col": "command_cases",
+              "op": "=",
+              "value": 9
+            },
+            {
+              "col": "no_implicit_commit",
+              "op": "=",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P5 根进程退出后后代仍持文件必须使正常unmount为Busy且I/O可用；新的明确终止请求须收到原native和parent正常退出回执。",
+    "anchor": {
+      "quote": "P5 根进程退出后后代仍持文件必须使正常unmount为Busy且I/O可用；新的明确终止请求须收到原native和parent正常退出回执。",
+      "locator": "product.md#P5"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "root_exit_not_drain",
+              "op": "=",
+              "value": 1
+            },
+            {
+              "col": "normal_terminal",
+              "op": "=",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P6 注册启动八个坏输入必须各保留exit1，无false RootServed或unmount；缺Branch与protected main保留已初始化work。",
+    "anchor": {
+      "quote": "P6 注册启动八个坏输入必须各保留exit1，无false RootServed或unmount；缺Branch与protected main保留已初始化work。",
+      "locator": "product.md#P6"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "startup_refusals",
+              "op": "=",
+              "value": 8
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P7 产品局部消费叶不得升级为SDK Sandbox或完整host隔离资格；旧Workspace和Git失败事实不由本叶覆盖。",
+    "anchor": {
+      "quote": "P7 产品局部消费叶不得升级为SDK Sandbox或完整host隔离资格；旧Workspace和Git失败事实不由本叶覆盖。",
+      "locator": "product.md#P7"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_runtime_evidence",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "sdk_qualification",
+              "op": "=",
+              "value": 0
+            },
+            {
+              "col": "full_host_isolation",
+              "op": "=",
+              "value": 0
+            },
+            {
+              "col": "nonpromotion",
+              "op": "=",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "op": "==",
+      "value": 1
+    }
+  },
+  {
+    "source_clause": "P8 新快照必须包含全部145份指定原件，保原字节与来源；逐项raw audit与父级历史事实重算是使用派生表的必要配套。",
+    "anchor": {
+      "quote": "P8 新快照必须包含全部145份指定原件，保原字节与来源；逐项raw audit与父级历史事实重算是使用派生表的必要配套。",
+      "locator": "product.md#P8"
+    },
+    "checker": {
+      "type": "count",
+      "predicate": {
+        "from": "product_artifacts",
+        "select": [
+          "name"
+        ]
+      },
+      "op": "==",
+      "value": 145
+    }
+  }
+]

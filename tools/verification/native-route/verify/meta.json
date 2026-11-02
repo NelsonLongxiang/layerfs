@@ -44,6 +44,18 @@
     {
       "file": "verify/specs/spec_bd78438e026e.json",
       "sha256": "e253007811d87a92a4e717115c67cf78620e32d33d23c4a13a2b1b32b380d95b"
+    },
+    {
+      "file": "verify/specs/spec_f5da786574b9.json",
+      "sha256": "dc8c5a18739e1535a50017267a9925d780ae69ed77102733718ca010c1e396eb"
+    },
+    {
+      "file": "verify/specs/spec_b35a181e1dd6.json",
+      "sha256": "56591061ff395f12e6b22e7dc3a288e17435dbed1284677a2ec5c704f1730f5a"
+    },
+    {
+      "file": "verify/specs/spec_1eb7b33fe75c.json",
+      "sha256": "c582bcb71e843b83adde25aa8d7575098ff75e68af61649511190cfbdd8de44d"
     }
   ],
   "orchestration": [
@@ -94,6 +106,21 @@
     {
       "path": "tools/native.mjs",
       "sha256": "dbaa152b50f530e4deab257ade49c1535916f31a350299c2cf599ffa92bb18ab",
+      "role": "test"
+    },
+    {
+      "path": "tools/product-counterexamples.mjs",
+      "sha256": "d165cc367c3c0ee53bb123d54a6b6e0a5f6c01711802f449a97b462dbb1b54de",
+      "role": "test"
+    },
+    {
+      "path": "tools/product-test.mjs",
+      "sha256": "08a22c17d6d3b304cc06ab7a48d8bc037c14221313946b683f5f2a1b3ad16f0b",
+      "role": "test"
+    },
+    {
+      "path": "tools/product.mjs",
+      "sha256": "606e14a48d93f74898d8484439e1269460f8f6a6b4891ead5fd0b4dbc4a81f48",
       "role": "test"
     },
     {
@@ -244,6 +271,30 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
       "at": "2026-11-02T00:30:33.580Z"
+    },
+    {
+      "path": "tools/product.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "606e14a48d93f74898d8484439e1269460f8f6a6b4891ead5fd0b4dbc4a81f48",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
+      "at": "2026-11-02T13:37:52.286Z"
+    },
+    {
+      "path": "tools/product-test.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "08a22c17d6d3b304cc06ab7a48d8bc037c14221313946b683f5f2a1b3ad16f0b",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
+      "at": "2026-11-02T13:37:52.346Z"
+    },
+    {
+      "path": "tools/product-counterexamples.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "d165cc367c3c0ee53bb123d54a6b6e0a5f6c01711802f449a97b462dbb1b54de",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
+      "at": "2026-11-02T13:37:52.398Z"
     }
   ]
 }

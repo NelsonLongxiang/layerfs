@@ -1,6 +1,6 @@
 # Native-route verification
 
-> Status: Current verifier for retained Windows Store, projection and native diagnostic evidence; historical Workspace readiness remains separate from product qualification.
+> Status: Current retained-evidence verifier for Windows Store, projection, diagnostics and product runtime/restricted/resident integration; historical readiness and full SDK qualification remain separate.
 
 Extends the historical `spec_9a8d135fb270` four-writer scenario. Its material, reports and archives remain untouched; no old run is relabelled as current.
 
@@ -204,3 +204,56 @@ fixtures (two positive, seventeen negative), and 37 unchanged native audit check
 The six leaf archives contain materials and exact snapshot bytes; each extracted
 snapshot is re-audited. The aggregate keeps its ordinary report/spec archive.
 See the [lifecycle verifier result](../../../core/docs/issues/352/NATIVE-VERIFIER-LIFECYCLE-2026-11-02.md).
+
+## Product runtime, restricted access and resident-instance leaves
+
+The [product](materials/product.md), [restricted](materials/restricted.md) and
+[resident-instance](materials/instance.md) materials add three scoped retained
+integration leaves. They do not retarget any historical spec or replace the
+historical Workspace/Git failures. The [nine-leaf tree](materials/tree-product.json)
+names the exact round-95 snapshot and preserves mixed source commits/read times.
+Its result is seven PASS leaves and two FAIL leaves, aggregate FAIL.
+
+The [product importer](tools/product.mjs) copies the closed round-77 lifecycle
+snapshot and embeds 145 original artifacts, including four exact committed test
+harnesses. It recomputes raw process/control/permission outcomes, original target
+exit vs stream/normal-unmount ownership, restricted backend access and resident
+handle release. Each source retains its own tested subtree, committed source and
+recorded binary hashes. Only the resident test's current binaries are byte-checked
+at import; replaced older binaries are explicitly not asserted current.
+
+The importer launches no product, does not read project credentials or source
+Stores, and adds no DACL/configuration change. Archived audit needs only the
+snapshot and fixed analysis sources; derived SQL rows alone are not provenance.
+Remount/dual-mount/active-close/no-autostart checks keep the original public test's
+assertion level and exact harness, not an invented independent event or manifest.
+Neither snapshots nor hashes prove arbitrary-producer honesty or signed builds.
+
+
+```powershell
+node tools/verification/native-route/tools/product.mjs <closed-lifecycle-baseline.sqlite> <fresh-output>
+node tools/verification/native-route/tools/product.mjs --audit <fresh-output>/snapshot.sqlite
+node tools/verification/native-route/tools/product-test.mjs <fresh-output>/snapshot.sqlite
+node tools/verification/native-route/tools/product-counterexamples.mjs <fresh-output>/snapshot.sqlite <fresh-synthetic-output>
+```
+
+The [raw-audit controls](tools/product-test.mjs) reject altered bytes, identity,
+permission or lifecycle outcomes and changes to old facts. The
+[predicate counterexamples](tools/product-counterexamples.mjs) create independent
+copies only: three positive and 27 negative/empty cases test the new 24 criteria.
+These synthetic copies are not raw-auditable product proofs.
+
+Use the unchanged pinned engine and explicit isolated home. Every leaf archive
+includes its original material and complete snapshot; the ordinary tree-generated
+aggregate archive contains only its legitimate report/spec. The manual archive
+command defaults to materials and therefore refuses a group without material_id;
+keep the original tree-generated aggregate rather than fabricating fields.
+Snapshot bytes are rechecked and raw-audited after extraction. Deterministic archive
+verification is separate from signing: the pinned local candidate is not a signed
+sealed distribution. No key is minted or self-trusted to make that claim.
+
+See the [round-95 result](../../../core/docs/issues/352/NATIVE-VERIFIER-PRODUCT-2026-11-02.md).
+The native SDK Sandbox/Workspace dispatch, complete host isolation, mapping/kernel
+drain, general Git normal close and crash recovery remain unqualified. This update
+imports earlier functional receipts; it is not a new live execution or fresh
+single-commit qualification.

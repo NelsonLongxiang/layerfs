@@ -1,0 +1,401 @@
+{
+  "contract_version": "1.2",
+  "spec_id": "spec_1eb7b33fe75c",
+  "spec_version": 1,
+  "title": "prepared spec",
+  "domain": "prepared",
+  "created": "2026-11-02T13:39:07.100Z",
+  "runtime_min": "1",
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1.2"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-11-02T13:39:07.076Z"
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "I1 原生实例证据必须保留原source commit、tested tree、",
+      "severity": "S1",
+      "source_clause": "I1 原生实例证据必须保留原source commit、tested tree、读取时间及实际原resident PID；不是容器镜像或机器级发现。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "identity_checked",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "source_commit",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "tested_tree",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "observed_at",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "original_pid",
+                "op": ">",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I1",
+        "quote": "I1 原生实例证据必须保留原source commit、tested tree、读取时间及实际原resident PID；不是容器镜像或机器级发现。"
+      }
+    },
+    {
+      "id": "V2",
+      "role": "assert",
+      "title": "I2 实际resident必须先running且初始Session为0；两个同时",
+      "severity": "S1",
+      "source_clause": "I2 实际resident必须先running且初始Session为0；两个同时挂载的原测试断言和同一private desktop观察必须保持，不造替代实例。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "resident_running",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "initial_sessions",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "simultaneous_mount_assertion",
+                "op": "=",
+                "value": 2
+              },
+              {
+                "col": "same_private_desktop",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I2",
+        "quote": "I2 实际resident必须先running且初始Session为0；两个同时挂载的原测试断言和同一private desktop观察必须保持，不造替代实例。"
+      }
+    },
+    {
+      "id": "V3",
+      "role": "assert",
+      "title": "I3 活动Session关闭应拒绝MountsActive，closed实例再m",
+      "severity": "S1",
+      "source_clause": "I3 活动Session关闭应拒绝MountsActive，closed实例再mount应作用前拒绝且不得自动启动；保留原断言层级。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "active_close_refusal_assertion",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "no_autostart_assertion",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I3",
+        "quote": "I3 活动Session关闭应拒绝MountsActive，closed实例再mount应作用前拒绝且不得自动启动；保留原断言层级。"
+      }
+    },
+    {
+      "id": "V4",
+      "role": "assert",
+      "title": "I4 原resident创建命令必须保退出7及原process handle明确",
+      "severity": "S1",
+      "source_clause": "I4 原resident创建命令必须保退出7及原process handle明确取消1223，300023字节binary新挂载和SDK读回保持原测试断言；token handle不得导出。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "root_exit",
+                "op": "=",
+                "value": 7
+              },
+              {
+                "col": "cancel_exit",
+                "op": "=",
+                "value": 1223
+              },
+              {
+                "col": "binary_remount_assertion",
+                "op": "=",
+                "value": 300023
+              },
+              {
+                "col": "token_handle_exported",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I4",
+        "quote": "I4 原resident创建命令必须保退出7及原process handle明确取消1223，300023字节binary新挂载和SDK读回保持原测试断言；token handle不得导出。"
+      }
+    },
+    {
+      "id": "V5",
+      "role": "assert",
+      "title": "I5 两挂载明确卸载后Session归零，原token和desktop句柄检查释",
+      "severity": "S1",
+      "source_clause": "I5 两挂载明确卸载后Session归零，原token和desktop句柄检查释放、原resident正常退出0才确认关闭，不以根exit当全内核排空。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "idle_sessions",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "token_closed",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "desktop_closed",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "resident_exit",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I5",
+        "quote": "I5 两挂载明确卸载后Session归零，原token和desktop句柄检查释放、原resident正常退出0才确认关闭，不以根exit当全内核排空。"
+      }
+    },
+    {
+      "id": "V6",
+      "role": "assert",
+      "title": "I6 十四个实例协议、十三个直接或handoff回执和十一个真实control用",
+      "severity": "S1",
+      "source_clause": "I6 十四个实例协议、十三个直接或handoff回执和十一个真实control用例必须保留各自原始结果，失联及矛盾创建不得当明确失败释放。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "protocol_cases",
+                "op": "=",
+                "value": 14
+              },
+              {
+                "col": "receipt_cases",
+                "op": "=",
+                "value": 13
+              },
+              {
+                "col": "native_control_cases",
+                "op": "=",
+                "value": 11
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I6",
+        "quote": "I6 十四个实例协议、十三个直接或handoff回执和十一个真实control用例必须保留各自原始结果，失联及矛盾创建不得当明确失败释放。"
+      }
+    },
+    {
+      "id": "V7",
+      "role": "assert",
+      "title": "I7 兄弟进程借token的旧1314及原真实测试FAIL必须保留；修正为原ow",
+      "severity": "S1",
+      "source_clause": "I7 兄弟进程借token的旧1314及原真实测试FAIL必须保留；修正为原owner创建，不提升权限、不重建token或重放失败操作。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "old_privilege_failure",
+                "op": "=",
+                "value": 1314
+              },
+              {
+                "col": "old_failure_retained",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I7",
+        "quote": "I7 兄弟进程借token的旧1314及原真实测试FAIL必须保留；修正为原owner创建，不提升权限、不重建token或重放失败操作。"
+      }
+    },
+    {
+      "id": "V8",
+      "role": "assert",
+      "title": "I8 实例叶必须保145份原件和配套raw audit，SDK容器Sandbox",
+      "severity": "S1",
+      "source_clause": "I8 实例叶必须保145份原件和配套raw audit，SDK容器Sandbox资格和完整host隔离仍0，不覆盖历史Git或Workspace FAIL。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "resident_instance_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "artifact_count",
+                "op": "=",
+                "value": 145
+              },
+              {
+                "col": "raw_audit_required",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "sdk_qualification",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "full_host_isolation",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "nonpromotion",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "instance.md#I8",
+        "quote": "I8 实例叶必须保145份原件和配套raw audit，SDK容器Sandbox资格和完整host隔离仍0，不覆盖历史Git或Workspace FAIL。"
+      }
+    }
+  ],
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "materials_sha256": "8fef70abbb9ba9ea0f2f738dbc88c424921b3f4c07198fb306776a2b5b199640"
+}

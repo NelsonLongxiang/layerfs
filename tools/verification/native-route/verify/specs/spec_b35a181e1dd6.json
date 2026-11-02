@@ -1,0 +1,381 @@
+{
+  "contract_version": "1.2",
+  "spec_id": "spec_b35a181e1dd6",
+  "spec_version": 1,
+  "title": "prepared spec",
+  "domain": "prepared",
+  "created": "2026-11-02T13:39:06.234Z",
+  "runtime_min": "1",
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1.2"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-11-02T13:39:06.211Z"
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "R1 权限证据必须保留原source commit、tested tree、读取",
+      "severity": "S1",
+      "source_clause": "R1 权限证据必须保留原source commit、tested tree、读取时间及原binary身份；没有签名构建溯源或新运行资格声明。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "identity_checked",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "source_commit",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "tested_tree",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "observed_at",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "raw_audit_required",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R1",
+        "quote": "R1 权限证据必须保留原source commit、tested tree、读取时间及原binary身份；没有签名构建溯源或新运行资格声明。"
+      }
+    },
+    {
+      "id": "V2",
+      "role": "assert",
+      "title": "R2 原生观察必须实读restricted token、integrity409",
+      "severity": "S1",
+      "source_clause": "R2 原生观察必须实读restricted token、integrity4096及可用系统随机数，不以启动器自报替代实际token观察。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "restricted_token",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "integrity",
+                "op": "=",
+                "value": 4096
+              },
+              {
+                "col": "rng_available",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R2",
+        "quote": "R2 原生观察必须实读restricted token、integrity4096及可用系统随机数，不以启动器自报替代实际token观察。"
+      }
+    },
+    {
+      "id": "V3",
+      "role": "assert",
+      "title": "R3 四个真实Store、项目记录、Overlay和template文件必须同时",
+      "severity": "S1",
+      "source_clause": "R3 四个真实Store、项目记录、Overlay和template文件必须同时拒绝READ与WRITE_DAC或WRITE_OWNER，各以Win32 error5保留。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "backend_read_denials",
+                "op": "=",
+                "value": 4
+              },
+              {
+                "col": "backend_acl_denials",
+                "op": "=",
+                "value": 4
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R3",
+        "quote": "R3 四个真实Store、项目记录、Overlay和template文件必须同时拒绝READ与WRITE_DAC或WRITE_OWNER，各以Win32 error5保留。"
+      }
+    },
+    {
+      "id": "V4",
+      "role": "assert",
+      "title": "R4 runtime、native parent及原launcher三个未降权父",
+      "severity": "S1",
+      "source_clause": "R4 runtime、native parent及原launcher三个未降权父进程必须同时拒绝内存读取与原令牌复制。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "parent_memory_denials",
+                "op": "=",
+                "value": 3
+              },
+              {
+                "col": "parent_token_denials",
+                "op": "=",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R4",
+        "quote": "R4 runtime、native parent及原launcher三个未降权父进程必须同时拒绝内存读取与原令牌复制。"
+      }
+    },
+    {
+      "id": "V5",
+      "role": "assert",
+      "title": "R5 五种空白、Unicode、引号及尾反斜线argv必须原样交付，LayerF",
+      "severity": "S1",
+      "source_clause": "R5 五种空白、Unicode、引号及尾反斜线argv必须原样交付，LayerFS环境不得自动泄露到目标命令。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "argv_cases",
+                "op": "=",
+                "value": 5
+              },
+              {
+                "col": "environment_filtered",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R5",
+        "quote": "R5 五种空白、Unicode、引号及尾反斜线argv必须原样交付，LayerFS环境不得自动泄露到目标命令。"
+      }
+    },
+    {
+      "id": "V6",
+      "role": "assert",
+      "title": "R6 原target退出7、明确根取消退出1223及九个合法或坏lifecycl",
+      "severity": "S1",
+      "source_clause": "R6 原target退出7、明确根取消退出1223及九个合法或坏lifecycle回执必须保原结果，文件系统正常终态仍独立确认。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "root_exit",
+                "op": "=",
+                "value": 7
+              },
+              {
+                "col": "cancel_exit",
+                "op": "=",
+                "value": 1223
+              },
+              {
+                "col": "receipt_cases",
+                "op": "=",
+                "value": 9
+              },
+              {
+                "col": "normal_terminal",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R6",
+        "quote": "R6 原target退出7、明确根取消退出1223及九个合法或坏lifecycle回执必须保原结果，文件系统正常终态仍独立确认。"
+      }
+    },
+    {
+      "id": "V7",
+      "role": "assert",
+      "title": "R7 受限命令必须在真实WinFsp写入，显式Commit后由SDK读回及新挂载",
+      "severity": "S1",
+      "source_clause": "R7 受限命令必须在真实WinFsp写入，显式Commit后由SDK读回及新挂载保持原断言；这些字段只表示原测试断言被审计。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "mount_write_assertion",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "commit_readback_assertion",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R7",
+        "quote": "R7 受限命令必须在真实WinFsp写入，显式Commit后由SDK读回及新挂载保持原断言；这些字段只表示原测试断言被审计。"
+      }
+    },
+    {
+      "id": "V8",
+      "role": "assert",
+      "title": "R8 本叶必须保留145份原件与配套raw audit，SDK资格和完整host",
+      "severity": "S1",
+      "source_clause": "R8 本叶必须保留145份原件与配套raw audit，SDK资格和完整host隔离为0，不外推网络、注册表、进程树、任意kernel或crash契约。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "restricted_access_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "artifact_count",
+                "op": "=",
+                "value": 145
+              },
+              {
+                "col": "raw_audit_required",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "sdk_qualification",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "full_host_isolation",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "nonpromotion",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "restricted.md#R8",
+        "quote": "R8 本叶必须保留145份原件与配套raw audit，SDK资格和完整host隔离为0，不外推网络、注册表、进程树、任意kernel或crash契约。"
+      }
+    }
+  ],
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "materials_sha256": "4837a3eb05fa4dffdc6fce034a0ebc3ce281ca30b073a7693e5c4cfe08d2531f"
+}
