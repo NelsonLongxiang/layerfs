@@ -4,6 +4,30 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Native host execution and filesystem ownership (2026-11-02)
+
+The explicit JavaScript native Session delegates trusted ordinary Windows
+commands to its [command owner](../../../api/runtime/src/platform/native-windows/commands.js).
+The host spawns one explicit executable/argv in the serving mount with standard
+streams, a minimal inherited environment and explicit command additions. No Exec
+control reaches the filesystem process and I/O needs no Exec identity. This
+same-user helper is not the SDK's isolated Sandbox or container Exec route.
+
+An immutable root-exit receipt is independent of the completion receipt, which
+also requires original close and consumed output EOF. Standard bounded
+PassThrough streams prevent Node's root-exit stdio drain from discarding unread
+output; backpressure remains active if descendants retain streams. Unknown
+stream/process outcomes keep original command custody without restart or
+automatic kill. Explicit cancellation requests termination of the original root
+ChildProcess once, never descendants, a filesystem service or a guessed pid.
+
+Unmount still checks actual native callback/handle/reference custody, not command
+status. New command admission stops when the Session terminates. Runtime keeps a
+closed filesystem Session while command completion remains owned; runtime.close
+refuses active/uncertain owners instead of discarding them. No command exit or
+stream EOF triggers Commit, unmount or a kernel-drain claim. See the
+[runtime contract](../../../api/docs/runtime.md#trusted-host-commands-in-a-native-mount).
+
 ## Registered Windows project authority (2026-11-02)
 
 The explicit runtime native Session consumer now also accepts an installed

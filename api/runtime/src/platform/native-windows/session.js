@@ -2,6 +2,7 @@
 // process kill or operation timeout; the deadline bounds readiness only.
 import { spawn } from "node:child_process";
 import { LayerFSError } from "@layerfs/agent";
+import { NativeCommands } from "./commands.js";
 
 const MAX_LINE = 4096;
 const MAX_U64 = (1n << 64n) - 1n;
@@ -26,6 +27,7 @@ const CODES = { "80000011": "Busy", c000000d: "InvalidInput", c00000bb: "Unsuppo
 export class NativeSession {
   #options;
   #released;
+  #commands;
   #child;
   #state = "starting";
   #root;
@@ -39,11 +41,17 @@ export class NativeSession {
   #last;
   #stderr = Buffer.alloc(0); // Diagnostic tail, not a complete error archive.
   #stderrTruncated = false;
-  constructor(options, released) { this.#options = options; this.#released = released; }
+  constructor(options, released) {
+    this.#options = options; this.#released = released;
+    this.#commands = new NativeCommands(options.path, () => this.#releaseClosed());
+  }
+  #releaseClosed() {
+    if (this.#state === "closed" && this.#commands.idle) this.#released();
+  }
   get path() { return this.#options.path; }
   get work() { return this.#options.work; }
   observation() {
-    return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
+    return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), ...this.#commands.observation(), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
   }
   async start() {
     const o = this.#options;
@@ -128,6 +136,11 @@ export class NativeSession {
         status: () => this.#call("status"),
         commit: (scope) => scope === "published" ? this.#call("commit") : Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit scope \"published\"; application-visible mapping capture is unsupported", null)),
         unmount: () => this.#call("unmount"),
+        exec: (executable, args, options) => {
+          if (this.#state === "retained") return Promise.reject(this.#failure.error);
+          if (this.#state !== "serving") return Promise.reject(new LayerFSError(this.#state === "closed" ? "NotMounted" : "Busy", "native command needs its original serving Session", null));
+          return this.#commands.start(executable, args, options);
+        },
       }));
       return;
     }
@@ -192,7 +205,7 @@ export class NativeSession {
     if (code === 0 && signal === null && this.#terminal && this.#line.length === 0 && this.#pending.size === 1) {
       const p = this.#pending.get(this.#terminal.id);
       if (p?.kind === "unmount" && p.answered) {
-        this.#state = "closed"; this.#pending.clear(); this.#released(); retained.delete(this);
+        this.#state = "closed"; this.#pending.clear(); this.#releaseClosed(); retained.delete(this);
         p.resolve({ ...this.#terminal, processExit: 0, processSignal: null }); return;
       }
     }

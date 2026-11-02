@@ -84,6 +84,6 @@ export class NativeSessions {
   assertIdle() {
     if (!this.#held.size) return;
     const sessions = this.list();
-    throw new LayerFSError(sessions.some((s) => s.state === "retained") ? "Unknown" : "Busy", "native Sessions remain owned; unmount explicitly before closing this runtime (retained failures are never silently disposed)", { sessions });
+    throw new LayerFSError(sessions.some((s) => s.state === "retained" || s.executionRetained) ? "Unknown" : "Busy", "native Sessions remain owned; unmount explicitly before closing this runtime (retained failures are never silently disposed)", { sessions });
   }
 }

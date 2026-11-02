@@ -86,7 +86,7 @@ this API is not a protection boundary against a malicious same-user binary or a
 filesystem path substitution race.
 
 `open` resolves only after the product's actual native root-service receipt, with
-`{ id, path, status(), commit(scope), unmount() }`. The handle is immutable;
+`{ id, path, status(), commit(scope), unmount(), exec(executable, args, options) }`. The handle is immutable;
 `root`, revision/count fields from `status` and Commit revision are `bigint`
 so 64-bit values are not rounded. `commit("published")` returns
 `{ changed, revision, scope: "published", published: true }`. No omitted/default
@@ -102,9 +102,9 @@ pending and blocks later admission once sent. It closes no caller-owned files,
 mappings or commands to make a Busy result succeed.
 
 `runtime.native.list()` returns process-local observations
-`{ id, path, work, state, pid, root }`; the optional root is a decimal string,
+`{ id, path, work, state, pid, root, commands, executionRetained }`; the optional root is a decimal string,
 not a general Ready or kernel-drain proof. States include starting, serving,
-unmounting and retained. A failed start with no process is removed. A process
+unmounting, closed (while a command still owns completion), and retained. A failed start with no process is removed. A process
 which started but failed, lost its reply stream, sent malformed/cross-correlated
 answers or missed readiness retains its original custody. Errors are sanitized
 `Unknown`; original requests/bytes/cause and the process remain held internally,
@@ -124,6 +124,60 @@ The public native API has direct WinFsp functional evidence in the
 It does not qualify complete SDK Ready, arbitrary mappings/kernel references,
 crash recovery or public endpoint authentication. Store calls remain in-process
 on the native route; no Store worker is introduced.
+
+### Trusted host commands in a native mount
+
+An explicit native Session supports ordinary same-user host execution through
+session.exec(executable, args, { env? }). The executable is an explicit absolute
+local file, args are copied, and cwd is the mount root. No shell or command
+runtime deadline is inferred. The call resolves only after the original process
+has started, returning an immutable handle with id, pid, stdin, stdout, stderr,
+exited, finished and cancel().
+
+Stdin is a normal Writable. Stdout/stderr are independent byte streams with
+bounded processing windows and backpressure, not whole-output strings or an
+arbitrary total-output cap. Start draining BOTH outputs before awaiting finished,
+and explicitly end stdin when no more input is intended. Caller-owned sinks
+must retain/report their own failures; the runtime never owns or ends a sink.
+
+The exited promise preserves the root's actual { exitCode, signal }, including
+nonzero/null codes without substituting success. The finished promise additionally
+requires original process close, raw output EOF and both exposed output streams
+consumed to EOF. Its receipt also carries command, pid, stdoutEnded, stderrEnded
+and cancellationRequested. Neither receipt proves every descendant or filesystem
+reference is gone. Node's root-exit stdio drain cannot discard a late consumer's
+unread output: bounded PassThrough streams retain it and continue backpressure.
+Not reading can intentionally block a command or finished; destroying output
+early retains Unknown rather than claiming complete delivery. A failed stream or
+process is not replayed or automatically terminated.
+
+cancel() explicitly requests termination of only this original root ChildProcess
+once, using Node's Windows SIGTERM implementation (not a POSIX graceful-signal
+guarantee). It returns { requested, rootExited }. A second pending request is
+Busy; an already exited root returns requested: false. It never signals a process
+tree, unrelated pid, filesystem process or all processes with a name. Descendants
+can survive; cancellation never proves their exit or safe unmount. There is no
+automatic cancellation, Commit or unmount, even after nonzero exit.
+
+Only PATH, PATHEXT, SYSTEMROOT, WINDIR, TEMP, TMP and COMSPEC are inherited. Other
+environment values are explicit and Windows case-unique. LayerFS deployment or
+capability variables and arbitrary host environment secrets are not automatically
+forwarded. This is environment hygiene, **not isolation**: commands run as the
+caller's Windows user and can access everything that user can. No token lowering,
+image, Job object, AppContainer or Sandbox registration is claimed. Do not use
+this helper for untrusted code. SDK workspace.exec remains unsupported natively.
+
+The runtime owns command launch, streams, exit and explicit root cancellation;
+its daemon never receives Exec control. Ordinary external processes need no Exec
+identity to use a mount. Unmount still probes actual filesystem custody, not
+command count. A surviving descendant holding a file makes it Busy after root
+exit; a command without filesystem references need not block unmount. After a
+successful unmount, the runtime retains a closed Session observation while a
+command still owns completion. runtime.close refuses Busy then, or Unknown for
+retained command failure, without silently dropping/killing/replaying it. Command
+count is not a descendant inventory or kernel-drain proof.
+
+See the [native execution proof](../../core/docs/issues/352/WINDOWS-NATIVE-EXEC-2026-11-02.md).
 
 ### Open an installed runtime project without exporting authority
 
