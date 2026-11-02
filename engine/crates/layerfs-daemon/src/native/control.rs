@@ -110,6 +110,37 @@ pub(super) fn run(shared: Arc<Shared>) {
                     };
                     emit(&shared, &line)
                 }
+                [_, "reference", after, offset] => {
+                    let line = match (after.parse::<u64>(), offset.parse::<u64>()) {
+                        (Ok(after), Ok(offset)) => {
+                            let s = shared
+                                .session
+                                .lock()
+                                .map_err(|_| io::Error::other("Session poisoned"))?;
+                            super::receipt::reference(
+                                s.as_ref()
+                                    .ok_or_else(|| io::Error::other("Session closed"))?,
+                                id,
+                                after,
+                                offset,
+                            )
+                        }
+                        _ => Err(super::refused(
+                            0xc000000d,
+                            "reference needs u64 cursor and byte offset",
+                        )),
+                    };
+                    match line {
+                        Ok(line) => emit(&shared, &line),
+                        Err(e) => emit(
+                            &shared,
+                            &format!(
+                                "NATIVE_SERVICE_REFUSED id={id} status={:08x}",
+                                e.status as u32
+                            ),
+                        ),
+                    }
+                }
                 [_, "state"] => {
                     let line = {
                         let s = shared

@@ -38,7 +38,20 @@ try{
   session=await runtime.native.open(input);assert.equal(Object.isFrozen(session),true);
   await assert.rejects(runtime.close(),{code:"Busy"});assert.equal(runtime.closed,false);
   await assert.rejects(session.commit(),{code:"Unsupported"});assert.equal(existsSync(marker),false);
-  if(selected==='identity-valid'||selected==='dirty-clean'){
+  if(selected.startsWith('reference-')){
+   for(const input of [[-1n,0n],[0,0n],[0n,1],[1n<<64n,0n],[0n,1n<<64n]])await assert.rejects(session.reference(...input),{code:'InvalidInput'});
+   assert.equal(existsSync(marker),false);
+   if(['reference-end','reference-valid','reference-window','reference-null'].includes(selected)){
+    const row=await session.reference(0n,0n);assert.equal(row.after,0n);assert.equal(row.offset,0n);
+    if(selected==='reference-end')assert.deepEqual(row,{found:false,after:0n,offset:0n});
+    else {assert.equal(row.found,true);assert.equal(row.handle,7n);assert.equal(row.serial,9n);assert.equal(row.cleaned,true);assert.equal(row.dataWritable,false);
+     if(selected==='reference-window'){assert.equal(row.path.length,1024);assert.equal(row.pathBytes,2048n);assert.equal(row.nextOffset,1024n);const tail=await session.reference(0n,1024n);assert.equal(tail.nextOffset,null);assert.equal(tail.path.length,1024);}
+     else if(selected==='reference-null'){assert.equal(row.pathBytes,null);assert.equal(row.path.length,0);}
+     else assert.equal(row.path.toString(),'/repo/objects/data');
+    }
+    await session.unmount();await runtime.close();
+   }else{await assert.rejects(session.reference(),{code:'Unknown'});await assert.rejects(session.reference(),{code:'Unknown'});assert.equal(JSON.parse(readFileSync(marker,'utf8')).calls,1);await assert.rejects(runtime.close(),{code:'Unknown'});}
+  }else if(selected==='identity-valid'||selected==='dirty-clean'){
    if(selected==='dirty-clean')await assert.rejects(session.unmount(false),e=>e.code==='Dirty'&&e.detail.serviceKept===true);
    const observed=await session.state();assert.equal(observed.workspace,session.id);assert.equal(observed.branch,input.branch);assert.equal(observed.dirtyInodes,1n);assert.equal(observed.dirtyEntries,2n);assert.equal(observed.pendingMerge,false);
    const original=await session.commit('published',true);assert.equal(original.changed,true);assert.equal(original.parent,null);assert.equal(original.head,'12'+'ab'.repeat(32));assert.equal(original.root,'ef'.repeat(32));assert.equal(original.revision,8n);

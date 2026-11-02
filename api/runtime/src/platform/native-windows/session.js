@@ -145,6 +145,10 @@ export class NativeSession {
       this.#handle = Object.freeze({ id: this.#options.id, path: this.path,
         status: () => this.#call("status"),
         state: () => this.#call("state"),
+        reference: (after = 0n, offset = 0n) => {
+          if ([after, offset].some((n) => typeof n !== "bigint" || n < 0n || n > MAX_U64)) return Promise.reject(new LayerFSError("InvalidInput", "native reference cursor and path byte offset must be u64 bigint values", null));
+          return this.#call("reference", { after, offset });
+        },
         commit: (scope, details = false) => scope === "published" && typeof details === "boolean" ? this.#call(details ? "publication" : "commit") : Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit scope \"published\"; application-visible mapping capture is unsupported", null)),
         unmount: (discard = true) => typeof discard === "boolean" ? this.#call(discard ? "unmount" : "unmount-clean") : Promise.reject(new LayerFSError("InvalidInput", "native unmount discard must be boolean", null)),
         exec: (executable, args, options) => {
@@ -156,7 +160,7 @@ export class NativeSession {
       this.#ready.resolve(this.#handle);
       return;
     }
-    match = /^NATIVE_SERVICE_(STATUS|STATE|COMMIT|PUBLICATION|UNMOUNTED|REFUSED) id=([0-9]+) (.*)$/.exec(line);
+    match = /^NATIVE_SERVICE_(STATUS|STATE|REFERENCE|COMMIT|PUBLICATION|UNMOUNTED|REFUSED) id=([0-9]+) (.*)$/.exec(line);
     if (!match || !["serving", "unmounting"].includes(this.#state)) throw new Error("unexpected native reply");
     const id = uint(match[2]).toString(), p = this.#pending.get(id);
     if (!p || p.answered) throw new Error("foreign or duplicate native reply id");
@@ -182,6 +186,26 @@ export class NativeSession {
       const value = { root: uint(s[1]), revision: uint(s[2]), handles: uint(s[3]), requests: uint(s[4]), active: uint(s[5]), retained: flag(s[6]), prepared: flag(s[7]), pendingCommit: s[8] === "1", files: uint(s[9]), directories: uint(s[10]) };
       if (value.root !== this.#root || value.files + value.directories !== value.handles) throw new Error("native status identity");
       if (value.retained) { this.#retain("native status reports original failure custody", new Error("native retained state"), line); return; }
+      this.#pending.delete(id); p.resolve(value); return;
+    }
+    if (kind === "REFERENCE" && p.kind === "reference") {
+      const end = /^after=([0-9]+) offset=([0-9]+) found=false$/.exec(payload);
+      const row = /^after=([0-9]+) offset=([0-9]+) found=true handle=([0-9]+) serial=([0-9]+) file=(true|false) directory=(true|false) lookup=(true|false) cleaned=(true|false) data_writable=(true|false) attributes_writable=(true|false) delete_access=(true|false) path_bytes=(-|[0-9]+) next_offset=(-|[0-9]+) path=(-|[0-9a-f]+)$/.exec(payload);
+      const match = end ?? row;
+      if (!match || uint(match[1]) !== p.after || uint(match[2]) !== p.offset) throw new Error("native reference request correlation");
+      let value = { found: false, after: p.after, offset: p.offset };
+      if (row) {
+        const handle = uint(row[3]), serial = uint(row[4]), file = flag(row[5]), directory = flag(row[6]);
+        const pathBytes = row[12] === "-" ? null : uint(row[12]), nextOffset = row[13] === "-" ? null : uint(row[13]);
+        if (row[14] !== "-" && row[14].length % 2) throw new Error("native reference path hex");
+        const path = row[14] === "-" ? Buffer.alloc(0) : Buffer.from(row[14], "hex");
+        const endOffset = p.offset + BigInt(path.length);
+        if (handle <= p.after || serial === 0n || file === directory || path.length > 1024 ||
+            (pathBytes === null ? p.offset !== 0n || path.length !== 0 || nextOffset !== null : endOffset > pathBytes ||
+              (endOffset < pathBytes ? path.length !== 1024 || nextOffset !== endOffset : nextOffset !== null))) throw new Error("native reference window identity/progress");
+        value = { ...value, found: true, handle, serial, file, directory, lookup: flag(row[7]), cleaned: flag(row[8]),
+          dataWritable: flag(row[9]), attributesWritable: flag(row[10]), deleteAccess: flag(row[11]), pathBytes, path, nextOffset };
+      }
       this.#pending.delete(id); p.resolve(value); return;
     }
     if (kind === "STATE" && p.kind === "state") {
@@ -215,7 +239,7 @@ export class NativeSession {
     }
     throw new Error("native reply kind differs from the request");
   }
-  #call(kind) {
+  #call(kind, fields = {}) {
     if (this.#state === "retained") return Promise.reject(this.#failure.error);
     if (this.#state === "closed") return Promise.reject(new LayerFSError("NotMounted", "this native Session is closed", { session: this.#options.id }));
     if (this.#state !== "serving" || (["unmount", "unmount-clean"].includes(kind) && this.#pending.size)) return Promise.reject(new LayerFSError("Busy", "native Session is starting, terminating or still owns original calls", { session: this.#options.id }));
@@ -223,7 +247,7 @@ export class NativeSession {
       this.#retain("native command identity exhausted", new Error("native id overflow")); return Promise.reject(this.#failure.error);
     }
     const id = this.#next.toString();
-    const p = { ...deferred(), id, kind, request: id + " " + (kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + "\n", answered: false };
+    const p = { ...deferred(), id, kind, ...fields, request: id + " " + (kind === "reference" ? "reference " + fields.after + " " + fields.offset : kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + "\n", answered: false };
     this.#pending.set(id, p);
     if (["unmount", "unmount-clean"].includes(kind)) this.#state = "unmounting";
     try { this.#child.stdin.write(p.request, (cause) => { if (cause) this.#retain("native command transfer failed; original request retained", cause, p); }); }

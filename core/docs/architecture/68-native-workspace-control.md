@@ -44,6 +44,24 @@ and return the original correlation. A JavaScript status preflight cannot replac
 that decision. Legacy explicit standalone unmount behavior stays unchanged.
 See the [runtime contract](../../../api/docs/runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
 
+## Bounded Windows native reference observation (2026-11-03)
+
+The [Session observation](../../../engine/crates/layerfs-daemon/src/native/observation.rs)
+reads the existing indexed native handle map under the original Session mutex.
+It returns one handle strictly after a u64 cursor and at most 1024 path bytes
+from a u64 offset, along with serial, descriptor kind, lookup/Cleanup facts and
+write/delete access facts. It performs no Store I/O, namespace walk, sequence
+allocation, admission transition, pin or release. The remembered path can be
+absent or change; it is not current namespace authority.
+
+The existing private inherited control carries one bounded original reply;
+JavaScript checks correlation, u64 identity, kind and byte-window progress and
+retains uncertain custody on malformed data. Windows can close or rename between
+observations: a paged traversal is neither a snapshot nor a kernel-object
+inventory. This is an operational read model, not a test hook or cleanup path.
+Cleanup remains separate from Close; the query never makes Busy into success.
+See the [public reference contract](../../../api/docs/runtime.md#native-reference-observation).
+
 ## Resident Windows native execution instance (2026-11-02)
 
 runtime.native.create now admits a real acknowledged resident process, original

@@ -27,6 +27,26 @@ process.stdin.on("data",chunk=>{
  }
  let at;
  while((at=input.indexOf(10))>=0){const line=input.subarray(0,at).toString();input=input.subarray(at+1);const [id,word]=line.split(" ");calls++;writeFileSync(log,JSON.stringify({calls,line}),{flag:"w"});
+  if(mode.startsWith("reference-")){
+   if(word!=="reference"){normal(id,word);continue;}
+   const [, , after,offset]=line.split(" ");
+   let reply="NATIVE_SERVICE_REFERENCE id="+id+" after="+after+" offset="+offset+" found=false\n";
+   if(mode!=="reference-end"){
+    let path=Buffer.from('/repo/objects/data').toString('hex'),bytes=18,next='-',h=7;
+    if(mode==='reference-window'){path='61'.repeat(1024);bytes=2048;next=String(BigInt(offset)+1024n);if(offset!=='0'){next='-';}}
+    if(mode==='reference-null'){path='-';bytes='-';}
+    reply="NATIVE_SERVICE_REFERENCE id="+id+" after="+after+" offset="+offset+" found=true handle="+h+" serial=9 file=true directory=false lookup=true cleaned=true data_writable=false attributes_writable=false delete_access=false path_bytes="+bytes+" next_offset="+next+" path="+path+"\n";
+    if(mode==='reference-wrong-cursor')reply=reply.replace('after='+after,'after=2');
+    if(mode==='reference-stale-handle')reply=reply.replace('handle=7','handle='+after);
+    if(mode==='reference-progress')reply=reply.replace('next_offset=-','next_offset=1');
+    if(mode==='reference-hex')reply=reply.replace('path='+path,'path=f');
+    if(mode==='reference-kind')reply=reply.replace('directory=false','directory=true');
+    if(mode==='reference-overflow')reply=reply.replace('serial=9','serial=18446744073709551616');
+   }
+   send(reply);
+   if(!['reference-end','reference-valid','reference-window','reference-null'].includes(mode)){process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
+   continue;
+  }
   if(mode.startsWith("sdk-")||mode.startsWith("identity-")||mode.startsWith("dirty-")){
    if((mode==="sdk-loss-state"&&word==="state"&&calls>1)||(mode==="sdk-loss-publication"&&word==="commit")){process.stdout.end();process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);continue;}
    if(mode==="dirty-clean"&&word==="unmount"&&calls===1)send("NATIVE_SERVICE_REFUSED id="+id+" status=e0f50001 service_kept=true\n");

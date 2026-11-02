@@ -87,11 +87,39 @@ this API is not a protection boundary against a malicious same-user binary or a
 filesystem path substitution race.
 
 `open` resolves only after the product's actual native root-service receipt, with
-`{ id, path, status(), commit(scope), unmount(), exec(executable, args, options) }`. The handle is immutable;
+`{ id, path, status(), state(), reference(after, offset), commit(scope), unmount(), exec(executable, args, options) }`. The handle is immutable;
 `root`, revision/count fields from `status` and Commit revision are `bigint`
 so 64-bit values are not rounded. `commit("published")` returns
 `{ changed, revision, scope: "published", published: true }`. No omitted/default
 scope, force, message or application-visible mapping capture is inferred.
+
+### Native reference observation
+
+`session.reference(after = 0n, offset = 0n)` reads the first still-owned native
+handle strictly greater than `after`. Both arguments must be u64 `bigint` values.
+An empty result is `{ found: false, after, offset }`. Otherwise the result includes
+`handle`, `serial`, `file`, `directory`, `lookup`, `cleaned`, `dataWritable`,
+`attributesWritable`, `deleteAccess`, `pathBytes`, `path` and `nextOffset`.
+Identity/length/offset numbers are `bigint`; `path` is a Buffer of at most 1024
+raw UTF-8 bytes. `pathBytes: null` means no remembered path. A non-null
+`nextOffset` requests another byte window with the same `after`, not with the
+returned handle; use `after = handle, offset = 0n` to advance to another owner.
+Offsets beyond the currently observed path are refused InvalidInput.
+
+Each call is a new observation under the original Session mutex, not a pinned
+snapshot. Handles may close and path hints may change between calls. Compare the
+returned handle/serial/flags/length before joining windows; even equal headers
+do not prove a path stayed unchanged. Decode only after joining raw bytes, since
+a window may split a code point. A remembered path is not a new namespace lookup
+or authoritative current name. The query performs one indexed handle lookup and
+one bounded copy; it neither scans the tree nor allocates a second owner registry.
+
+The existing inherited channel carries this reply only to the original native
+Session caller. It exposes no Store binding, host/backend path, OS handle or
+Exec ownership. It does not release, pin, coordinate or close anything, change
+admission, infer kernel/section references or establish normal-close readiness.
+Malformed/cross-correlated replies retain original custody without replay, as
+with the existing control operations. See the [reference observation record](../../core/docs/issues/352/WINDOWS-NATIVE-REFERENCES-2026-11-03.md).
 
 Only a correctly correlated terminal acknowledgement **and** the original parent
 process's successful close resolve `unmount()`. The result includes string command

@@ -192,3 +192,76 @@ fn abandoned_live_product_owner_does_not_dispose_its_overlay() {
         "drop is not permission to revoke a live kernel owner"
     );
 }
+
+#[test]
+fn product_reference_observation_is_readonly_and_keeps_original_cleanup_custody() {
+    let (_root, _fixture, mut s) = start("reference");
+    assert!(s.reference(0, 0).unwrap().is_none());
+    assert!(s.reference(u64::MAX, 0).unwrap().is_none());
+    let (file, stat) = s.open("/alpha.txt", false).unwrap();
+    let (directory, _) = s.open("/many", false).unwrap();
+    let before = s.close_state();
+    let frontier = s.frontier().unwrap();
+    let row = s.reference(0, 0).unwrap().unwrap();
+    assert_eq!((row.handle, row.serial), (file, stat.serial));
+    assert!(row.file && !row.directory && row.lookup && !row.cleaned);
+    assert!(!row.data_writable && !row.attributes_writable && !row.delete_access);
+    assert_eq!(row.path_length, Some(10));
+    assert_eq!(row.path, b"/alpha.txt");
+    assert_eq!(row.next_offset, None);
+    let tail = s.reference(0, 10).unwrap().unwrap();
+    assert!(tail.path.is_empty());
+    assert_eq!(tail.path_length, Some(10));
+    assert_eq!(s.reference(0, 11).unwrap_err().status as u32, 0xc000000d);
+    let row = s.reference(file, 0).unwrap().unwrap();
+    assert!(row.directory && !row.file);
+    assert_eq!(row.handle, directory);
+    assert!(s.reference(directory, 0).unwrap().is_none());
+    assert_eq!(s.close_state(), before);
+    assert_eq!(s.frontier().unwrap(), frontier);
+    let (writable, _) = s.open_windows("/alpha.txt", 7).unwrap();
+    assert_eq!(
+        writable,
+        directory + 1,
+        "observation allocates no handle identity"
+    );
+    let row = s.reference(directory, 0).unwrap().unwrap();
+    assert!(row.data_writable && row.attributes_writable && row.delete_access);
+    s.close_file(writable).unwrap();
+    s.cleanup_file(file).unwrap();
+    assert!(s.reference(0, 0).unwrap().unwrap().cleaned);
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    s.close_file(file).unwrap();
+    assert_eq!(s.reference(0, 0).unwrap().unwrap().handle, directory);
+    s.close_file(directory).unwrap();
+    assert!(s.reference(0, 0).unwrap().is_none());
+    finish(&mut s);
+}
+#[test]
+fn product_reference_observation_tracks_hints_without_pinning_namespace_or_owner() {
+    let (_root, _fixture, mut s) = start("reference-hints");
+    let (file, stat) = s.open("/alpha.txt", false).unwrap();
+    s.cleanup_file(file).unwrap();
+    let old = s.reference(0, 0).unwrap().unwrap();
+    s.rename("/alpha.txt", "/moved.txt", false).unwrap();
+    let moved = s.reference(0, 0).unwrap().unwrap();
+    assert_eq!((moved.handle, moved.serial), (file, stat.serial));
+    assert_eq!(moved.path, b"/moved.txt");
+    assert_eq!(
+        old.path, b"/alpha.txt",
+        "previous observation is copied data"
+    );
+    s.unlink("/moved.txt").unwrap();
+    let unlinked = s.reference(0, 0).unwrap().unwrap();
+    assert_eq!((unlinked.handle, unlinked.serial), (file, stat.serial));
+    assert!(unlinked.cleaned && unlinked.lookup && unlinked.file);
+    assert_eq!(unlinked.path_length, None);
+    assert!(unlinked.path.is_empty());
+    assert_eq!(unlinked.next_offset, None);
+    assert_eq!(s.reference(0, 1).unwrap_err().status as u32, 0xc000000d);
+    assert_eq!(s.read(file, 0, 3).unwrap(), b"old");
+    assert_eq!(s.prepare_close().unwrap_err().status as u32, 0x80000011);
+    s.close_file(file).unwrap();
+    assert!(s.reference(0, 0).unwrap().is_none());
+    finish(&mut s);
+}

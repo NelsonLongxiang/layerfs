@@ -28,3 +28,16 @@ pub(super) fn commit(receipt: &CommitReceipt, id: u64) -> String {
         hex(receipt.installed.branch.base_layer.as_slice()),hex(receipt.installed.effective_root.as_bytes()),
         head(parent),head(displaced),head(merge.and_then(|m|m.from)),head(merge.and_then(|m|m.head)))
 }
+
+pub(super) fn reference(session: &Session, id: u64, after: u64, offset: u64) -> Result<String> {
+    let Some(row) = session.reference(after, offset)? else {
+        return Ok(format!(
+            "NATIVE_SERVICE_REFERENCE id={id} after={after} offset={offset} found=false"
+        ));
+    };
+    let number = |value: Option<u64>| value.map(|n| n.to_string()).unwrap_or_else(|| "-".into());
+    Ok(format!("NATIVE_SERVICE_REFERENCE id={id} after={after} offset={offset} found=true handle={} serial={} file={} directory={} lookup={} cleaned={} data_writable={} attributes_writable={} delete_access={} path_bytes={} next_offset={} path={}",
+        row.handle, row.serial, row.file, row.directory, row.lookup, row.cleaned, row.data_writable,
+        row.attributes_writable, row.delete_access, number(row.path_length), number(row.next_offset),
+        if row.path.is_empty() { "-".into() } else { hex(&row.path) }))
+}
