@@ -198,7 +198,6 @@ impl Session {
             coordinating: None,
             retained_completions: Vec::new(),
             retained_commit: None,
-            retained_success: None,
             retained_lookup: None,
             retained_open: None,
         };

@@ -39,6 +39,12 @@ try{
   const publication=await shop.workspace.commit(ws);assert.equal(publication.head,'12'+'ab'.repeat(32));assert.equal(publication.root,'ef'.repeat(32));assert.equal(publication.kind,'Committed');
   await shop.close();shop=undefined;assert.equal((await instance.status()).sessions,1);
   const attached=await LayerFS.open('example');await runtime.native.bindClient(attached,instance,{commitScope:'published'});assert.equal((await attached.sandbox.list_workspaces(registration.sandbox)).items.length,1);await attached.workspace.unmount(ws,true);await attached.sandbox.close(registration.sandbox);await attached.close();await plain.close();plain=undefined;await runtime.close();
+ }else if(selected==='message-forwarding'){
+  const ws=await shop.workspace.mount(registration.sandbox,'feature'),marker=join(out,'session-calls.json');
+  for(const message of [null,1,{},'x'.repeat(4097),'a\0b','x\r','\u0085','\ud800']){const before=existsSync(marker)?readFileSync(marker,'utf8'):null;await assert.rejects(shop.workspace.commit(ws,message),{code:'InvalidInput'});assert.equal(existsSync(marker)?readFileSync(marker,'utf8'):null,before);}
+  await assert.rejects(shop.workspace.commit(ws,'valid',true),{code:'Unsupported'});
+  for(const message of ['Unicode 雪😀\n\t retained','',undefined,'x'.repeat(4096)]){const receipt=await shop.workspace.commit(ws,message);assert.equal(receipt.kind,'Committed');const line=JSON.parse(readFileSync(marker,'utf8')).line;const expected=message===undefined?'none':message===''?'-':Buffer.from(message).toString('hex');assert.ok(line.endsWith(' commit published identity message '+expected));}
+  await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'message-forwarded',utf8:true,maximumBytes:4096,invalidBeforeEffect:true,forceRefused:true});
  }else if(selected==='mixed'){
   const ws={sandbox:registration.sandbox,path:directBefore.path};
   assert.equal(resolve(directBefore.path),resolve(join(out,'layerfs-'+instance.id+'-1-mount')));

@@ -2,6 +2,7 @@
 // process kill or operation timeout; the deadline bounds readiness only.
 import { spawn } from "node:child_process";
 import { LayerFSError } from "@layerfs/agent";
+import { checkedMessage } from "@layerfs/agent/internal";
 import { NativeCommands } from "./commands.js";
 
 const MAX_LINE = 4096;
@@ -149,7 +150,14 @@ export class NativeSession {
           if ([after, offset].some((n) => typeof n !== "bigint" || n < 0n || n > MAX_U64)) return Promise.reject(new LayerFSError("InvalidInput", "native reference cursor and path byte offset must be u64 bigint values", null));
           return this.#call("reference", { after, offset });
         },
-        commit: (scope, details = false) => scope === "published" && typeof details === "boolean" ? this.#call(details ? "publication" : "commit") : Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit scope \"published\"; application-visible mapping capture is unsupported", null)),
+        commit: (scope, details = false, ...metadata) => {
+          if (scope !== "published" || typeof details !== "boolean") return Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit published scope; application-visible mapping capture is unsupported", null));
+          if (metadata.length > 1) return Promise.reject(new LayerFSError("InvalidInput", "native Commit takes one optional message", null));
+          let fields = {};
+          try { if (metadata.length) fields = { hasMessage: true, message: checkedMessage(metadata[0]) }; }
+          catch (cause) { return Promise.reject(cause); }
+          return this.#call(details ? "publication" : "commit", fields);
+        },
         unmount: (discard = true) => typeof discard === "boolean" ? this.#call(discard ? "unmount" : "unmount-clean") : Promise.reject(new LayerFSError("InvalidInput", "native unmount discard must be boolean", null)),
         exec: (executable, args, options) => {
           if (this.#state === "retained") return Promise.reject(this.#failure.error);
@@ -247,7 +255,8 @@ export class NativeSession {
       this.#retain("native command identity exhausted", new Error("native id overflow")); return Promise.reject(this.#failure.error);
     }
     const id = this.#next.toString();
-    const p = { ...deferred(), id, kind, ...fields, request: id + " " + (kind === "reference" ? "reference " + fields.after + " " + fields.offset : kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + "\n", answered: false };
+    const metadata = fields.hasMessage ? " message " + (fields.message === undefined ? "none" : fields.message === "" ? "-" : Buffer.from(fields.message, "utf8").toString("hex")) : "";
+    const p = { ...deferred(), id, kind, ...fields, request: id + " " + (kind === "reference" ? "reference " + fields.after + " " + fields.offset : kind === "commit" ? "commit published" : kind === "publication" ? "commit published identity" : kind === "unmount-clean" ? "unmount clean" : kind) + metadata + "\n", answered: false };
     this.#pending.set(id, p);
     if (["unmount", "unmount-clean"].includes(kind)) this.#state = "unmounting";
     try { this.#child.stdin.write(p.request, (cause) => { if (cause) this.#retain("native command transfer failed; original request retained", cause, p); }); }

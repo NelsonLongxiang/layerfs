@@ -49,7 +49,7 @@ if (selected === "surface") {
   assert.equal(agent.INIT_TIMEOUT_MS, 300_000, "Init's default timeout: 300 s");
   // the internal entry exports exactly what its header and the README list
   assert.deepEqual(Object.keys(await import("@layerfs/agent/internal")).sort(), [
-    "STATE", "addonPath", "bindClientControl", "connection", "decode", "deployment", "encode", "endpointOf", "frame", "invokeBackend", "invokeClient",
+    "STATE", "addonPath", "bindClientControl", "checkedMessage", "connection", "decode", "deployment", "encode", "endpointOf", "frame", "invokeBackend", "invokeClient",
     "invokeClientBackend", "live", "outcome", "page", "pageOf", "projectArgs", "readFrames", "sandboxArg", "storeArgs", "useWorker", "workspaceArgs",
   ]);
   await shop.close();

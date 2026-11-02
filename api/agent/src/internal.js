@@ -6,12 +6,12 @@
 // It exports exactly:
 //   from client.js: STATE, invokeBackend, invokeClient, invokeClientBackend,
 //     live, outcome, page, pageOf, projectArgs, sandboxArg, storeArgs,
-//     workspaceArgs, deployment, bindClientControl
+//     workspaceArgs, deployment, bindClientControl, checkedMessage
 //   from transport/frames.js: decode, encode, frame, readFrames
 //   from transport/worker_client.js: connection, endpointOf
 //   from transport/inprocess.js: addonPath
 //   from transport/index.js: useWorker
-export { STATE, invokeBackend, invokeClient, invokeClientBackend, live, outcome, page, pageOf, projectArgs, sandboxArg, storeArgs, workspaceArgs, deployment, bindClientControl } from "./client.js";
+export { STATE, invokeBackend, invokeClient, invokeClientBackend, live, outcome, page, pageOf, projectArgs, sandboxArg, storeArgs, workspaceArgs, deployment, bindClientControl, checkedMessage } from "./client.js";
 export { decode, encode, frame, readFrames } from "./transport/frames.js";
 export { connection, endpointOf } from "./transport/worker_client.js";
 export { addonPath } from "./transport/inprocess.js";

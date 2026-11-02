@@ -75,8 +75,9 @@ other; it downloads nothing.
 `@layerfs/agent`, and may change in any release; don't add new uses. It
 exports exactly `STATE`, `invokeBackend`, `invokeClient`,
 `invokeClientBackend`, `live`, `outcome`, `page`, `pageOf`, `projectArgs`,
-`sandboxArg`, `storeArgs`, `workspaceArgs`, `deployment`, `bindClientControl`
-(call helpers; the last is the runtime’s explicit per-client native registration),
+`sandboxArg`, `storeArgs`, `workspaceArgs`, `deployment`, `bindClientControl`,
+`checkedMessage` (call helpers; the last two share native registration and Commit
+message validation with the runtime),
 `decode`, `encode`, `frame`, `readFrames` (worker frames), `connection`,
 `endpointOf` (worker client), `addonPath` (in-process addon) and `useWorker`
 (the runtime's worker hand-over).

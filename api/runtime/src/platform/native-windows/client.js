@@ -2,7 +2,7 @@
 // keep the client's original local binding; container create/Bash Exec stay refused.
 import { realpathSync } from "node:fs";
 import { LayerFSError } from "@layerfs/agent";
-import { bindClientControl, live } from "@layerfs/agent/internal";
+import { bindClientControl, live, checkedMessage } from "@layerfs/agent/internal";
 const mode = "windows-restricted";
 const samePath = (a, b) => typeof a === "string" && realpathSync.native(a) === realpathSync.native(b);
 export class NativeClientRoute {
@@ -66,6 +66,12 @@ export class NativeClientRoute {
       if (args.message !== undefined || args.spool !== undefined || args.sinks !== undefined) throw new LayerFSError("InvalidInput", "native execution returns original stream handles; message, spool and sinks do not apply", null);
       return { value: await this.#use(args, (session) => session.handle().exec(input.executable, input.args, input.env === undefined ? {} : { env: input.env })) };
     }
+    if (op === "workspace.commit") {
+      if (args.force) throw new LayerFSError("Unsupported", "native forced Commit is not implemented", null);
+      const message = checkedMessage(args.message);
+      const value = await this.#use(args, (session) => session.handle().commit("published", true, message));
+      return { value: { ...value, kind: value.changed ? "Committed" : "UpToDate", mode } };
+    }
     await this.#running(args.sandbox);
     if (op === "sandbox.close") return { value: { kind: "Closed", mode, ...await this.#original.close() } };
     if (op === "workspace.mount") {
@@ -85,11 +91,6 @@ export class NativeClientRoute {
           dirty: { inodes: state.dirtyInodes, entries: state.dirtyEntries }, headMovedSinceMount: null, pendingMerge: state.pendingMerge, mode });
       }
       return { value: { version: null, workspaces } };
-    }
-    if (op === "workspace.commit") {
-      if ((args.message !== undefined && args.message !== null) || args.force) throw new LayerFSError("Unsupported", "this native route preserves original Published Commit metadata; message and force are not implemented", null);
-      const value = await this.#use(args, (session) => session.handle().commit("published", true));
-      return { value: { ...value, kind: value.changed ? "Committed" : "UpToDate", mode } };
     }
     if (op === "workspace.unmount") {
       if (args.force) throw new LayerFSError("Unsupported", "native forced unmount is not implemented; normal Busy remains reversible", null);

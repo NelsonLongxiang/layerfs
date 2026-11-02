@@ -341,3 +341,107 @@ fn product_coordination_is_reversible_and_close_remains_the_release_authority() 
     s.end_close_coordination(token, true).unwrap();
     s.finish_after_native_drain().unwrap();
 }
+
+#[test]
+fn product_commit_message_is_exact_bounded_and_does_not_create_uptodate_history() {
+    let (_root, _fixture, mut s) = start("commit-message");
+    let messages = [
+        Some("Unicode 雪😀\n\t 1 unmount discard".to_string()),
+        Some(String::new()),
+        Some(format!("{}x", "界".repeat(1365))),
+        None,
+    ];
+    for (index, message) in messages.into_iter().enumerate() {
+        let (file, _) = s.create_file(&format!("/message-{index}")).unwrap();
+        s.write(file, 0, b"original payload", false, false).unwrap();
+        s.close_file(file).unwrap();
+        let work = s
+            .begin_commit_message(CommitScope::Published, message.clone())
+            .unwrap();
+        assert_eq!(s.close_state().pending_commit, 1);
+        let receipt = s.complete_commit(work.run()).unwrap();
+        let expected = message.as_deref().unwrap_or("Commit Workspace changes");
+        match receipt.success.history.as_ref().unwrap() {
+            CommitOutcome::Committed { record, .. } => {
+                assert_eq!(record.meta.message.as_deref(), Some(expected))
+            }
+            other => panic!("expected publication, got {other:?}"),
+        }
+        assert!(receipt.changed);
+        let head = receipt.installed.branch.head_commit;
+        let work = s
+            .begin_commit_message(
+                CommitScope::Published,
+                Some("metadata-only is not a Commit".into()),
+            )
+            .unwrap();
+        let next = s.complete_commit(work.run()).unwrap();
+        assert!(!next.changed);
+        assert_eq!(next.installed.branch.head_commit, head);
+        assert!(matches!(
+            next.success.history,
+            Some(CommitOutcome::UpToDate { .. })
+        ));
+    }
+    let before = s.close_state();
+    let frontier = s.frontier().unwrap();
+    for invalid in [
+        "x".repeat(4097),
+        "bad\0message".into(),
+        "bad\rmessage".into(),
+        "\u{85}".into(),
+    ] {
+        let error = s
+            .begin_commit_message(CommitScope::Published, Some(invalid))
+            .err()
+            .unwrap();
+        assert_eq!(error.status as u32, 0xc000000d);
+        assert_eq!(s.close_state(), before);
+        assert_eq!(s.frontier().unwrap(), frontier);
+    }
+    let (file, _) = s.create_file("/legacy-default").unwrap();
+    s.close_file(file).unwrap();
+    let work = s.begin_commit(CommitScope::Published).unwrap();
+    let receipt = s.complete_commit(work.run()).unwrap();
+    match receipt.success.history.as_ref().unwrap() {
+        CommitOutcome::Committed { record, .. } => assert_eq!(
+            record.meta.message.as_deref(),
+            Some("Windows published Workspace frontier")
+        ),
+        other => panic!("expected legacy publication, got {other:?}"),
+    }
+    finish(&mut s);
+}
+#[test]
+fn native_failure_retains_original_commit_completion_and_message_without_release_or_replay() {
+    let (_root, _fixture, mut s) = start("commit-message-retained");
+    let (file, _) = s.create_file("/uncertain").unwrap();
+    s.close_file(file).unwrap();
+    let work = s
+        .begin_commit_message(
+            CommitScope::Published,
+            Some("retain original metadata 雪".into()),
+        )
+        .unwrap();
+    let op = s.operation().unwrap();
+    op.overlay()
+        .kernel_revoke(op.workspace().route(), s.mount())
+        .unwrap();
+    drop(op);
+    let failure = s.open("/alpha.txt", false).err().unwrap();
+    assert_eq!(failure.status as u32, 0xc0000001);
+    assert!(std::error::Error::source(&failure).is_some());
+    let error = s.complete_commit(work.run()).err().unwrap();
+    assert_eq!(error.status as u32, 0xc0000001);
+    assert_eq!(s.close_state().retained, 1);
+    assert_eq!(s.close_state().pending_commit, 1);
+    assert_eq!(
+        s.begin_commit_message(CommitScope::Published, Some("must not replay".into()))
+            .err()
+            .unwrap()
+            .status as u32,
+        0xc0000001
+    );
+    assert!(s.prepare_close().is_err());
+    assert!(s.finish_after_native_drain().is_err());
+}

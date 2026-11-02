@@ -39,7 +39,6 @@ impl State {
     }
     pub(super) fn accepting(&self) -> Result<()> {
         if self.retained_commit.is_some()
-            || self.retained_success.is_some()
             || !self.retained_completions.is_empty()
             || self.retained_lookup.is_some()
             || self.retained_open.is_some()
@@ -87,7 +86,6 @@ impl State {
             ),
             retained: u32::from(
                 self.retained_commit.is_some()
-                    || self.retained_success.is_some()
                     || !self.retained_completions.is_empty()
                     || self.retained_lookup.is_some()
                     || self.retained_open.is_some()

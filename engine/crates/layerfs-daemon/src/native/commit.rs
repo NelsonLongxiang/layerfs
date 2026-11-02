@@ -13,6 +13,7 @@ pub struct CommitWork {
     bound: Arc<BoundWorkspace>,
     token: u64,
     before: BranchSnapshot,
+    message: Option<String>,
 }
 #[must_use = "settle the original completion without replay"]
 pub struct CommitCompletion {
@@ -22,7 +23,8 @@ struct Completion {
     bound: Arc<BoundWorkspace>,
     token: u64,
     before: BranchSnapshot,
-    outcome: std::thread::Result<std::result::Result<CommitSuccess, Box<CommitFailure>>>,
+    message: Option<String>,
+    outcome: std::thread::Result<std::result::Result<CommitSuccess, Arc<CommitFailure>>>,
 }
 pub struct CommitReceipt {
     pub success: CommitSuccess,
@@ -34,17 +36,19 @@ pub struct CommitReceipt {
 }
 impl CommitWork {
     pub fn run(self) -> CommitCompletion {
+        let options = CommitOptions {
+            force: false,
+            message: self.message,
+        };
         let outcome = catch_unwind(AssertUnwindSafe(|| {
-            self.bound.commit_captured(&CommitOptions {
-                force: false,
-                message: Some("Windows published Workspace frontier".into()),
-            })
+            self.bound.commit_captured(&options).map_err(Arc::from)
         }));
         CommitCompletion {
             original: Some(Box::new(Completion {
                 bound: self.bound,
                 token: self.token,
                 before: self.before,
+                message: options.message,
                 outcome,
             })),
         }
@@ -61,6 +65,18 @@ impl Drop for CommitCompletion {
 }
 impl State {
     pub(super) fn begin_commit(&mut self, scope: CommitScope) -> Result<CommitWork> {
+        self.begin_commit_message(scope, Some("Windows published Workspace frontier".into()))
+    }
+    pub(super) fn begin_commit_message(
+        &mut self,
+        scope: CommitScope,
+        message: Option<String>,
+    ) -> Result<CommitWork> {
+        let mut metadata = layerfs_history::CommitMeta::new(CommitVia::Workspace);
+        metadata.message = message;
+        metadata
+            .check()
+            .map_err(|e| refused(0xc000000d, &e.to_string()))?;
         if scope == CommitScope::ApplicationVisible {
             return Err(refused(0xc00000bb,"application-visible cache/section capture is not supported; explicitly request published-frontier semantics"));
         }
@@ -71,10 +87,7 @@ impl State {
         if self.frontier()?.captured.is_some() {
             return Err(refused(0x80000011, "capture already owned"));
         }
-        if self.retained_commit.is_some()
-            || self.retained_success.is_some()
-            || !self.retained_completions.is_empty()
-        {
+        if self.retained_commit.is_some() || !self.retained_completions.is_empty() {
             return Err(failed("prior Commit custody retained"));
         }
         let before = self.bound.snapshot().map_err(workspace_error)?;
@@ -84,6 +97,7 @@ impl State {
             bound: self.bound.clone(),
             token,
             before,
+            message: metadata.message,
         })
     }
     pub(super) fn retain_completion(&mut self, completion: CommitCompletion) {
@@ -112,25 +126,22 @@ impl State {
             self.retain_completion(completion);
             return Err(failed("Commit panicked; original ownership retained"));
         }
-        let Completion {
-            before, outcome, ..
-        } = *completion
-            .original
-            .take()
-            .expect("original completion present");
-        let success = match outcome.expect("panic retained") {
-            Ok(s) => s,
+        let success = match original.outcome.as_ref().expect("panic retained") {
+            Ok(success) => success,
             Err(original) => {
-                let original: Arc<CommitFailure> = original.into();
-                let e = super::Error {
+                let original = original.clone();
+                let error = super::Error {
                     status: 0xc0000001u32 as i32,
                     detail: original.to_string(),
                     source: Some(original.clone()),
                 };
                 self.retained_commit = Some(original);
-                return Err(e);
+                self.retain_completion(completion);
+                return Err(error);
             }
         };
+        let before = &original.before;
+        let message = &original.message;
         let checked = (|| {
             if success
                 .namespace
@@ -151,7 +162,10 @@ impl State {
             };
             let changed = match &success.history {
                 Some(CommitOutcome::Committed { record, .. }) => {
-                    if record.meta.via != CommitVia::Workspace
+                    if message
+                        .as_deref()
+                        .is_some_and(|text| record.meta.message.as_deref() != Some(text))
+                        || record.meta.via != CommitVia::Workspace
                         || record.parent != expected_parent
                         || record.meta.branch != Some(self.binding.branch)
                         || installed.branch.head_commit != Some(record.id)
@@ -182,10 +196,17 @@ impl State {
         let (installed, frontier, changed) = match checked {
             Ok(v) => v,
             Err(e) => {
-                self.retained_success = Some(Box::new(success));
+                self.retain_completion(completion);
                 return Err(e);
             }
         };
+        let Completion {
+            before, outcome, ..
+        } = *completion
+            .original
+            .take()
+            .expect("checked completion present");
+        let success = outcome.expect("panic checked").expect("failure checked");
         self.pending_commit = None;
         Ok(CommitReceipt {
             success,

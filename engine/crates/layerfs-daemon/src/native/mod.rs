@@ -4,6 +4,7 @@ mod bootstrap;
 mod close_port;
 mod commit;
 mod control;
+mod control_commit;
 mod coordination;
 mod handles;
 mod lifecycle;

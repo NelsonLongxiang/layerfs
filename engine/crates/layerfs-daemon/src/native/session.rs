@@ -38,7 +38,6 @@ pub(super) struct State {
     pub(super) coordinating: Option<u64>,
     pub(super) retained_completions: Vec<CommitCompletion>,
     pub(super) retained_commit: Option<Arc<CommitFailure>>,
-    pub(super) retained_success: Option<Box<layerfs_store_service::store::CommitSuccess>>,
     pub(super) retained_lookup: Option<Arc<layerfs_store_service::store::KernelLookupFailure>>,
     pub(super) retained_open: Option<Arc<layerfs_store_service::store::KernelOpenFailure>>,
 }
@@ -120,6 +119,15 @@ impl Session {
     }
     pub fn begin_commit(&mut self, scope: CommitScope) -> Result<CommitWork> {
         self.attempt(|s| s.begin_commit(scope))
+    }
+    /// Admit one explicit message without changing Published capture or force policy.
+    /// None uses the Store's existing Workspace default; empty text stays empty.
+    pub fn begin_commit_message(
+        &mut self,
+        scope: CommitScope,
+        message: Option<String>,
+    ) -> Result<CommitWork> {
+        self.attempt(|s| s.begin_commit_message(scope, message))
     }
     pub fn complete_commit(&mut self, completion: CommitCompletion) -> Result<CommitReceipt> {
         self.attempt(|s| s.complete_commit(completion))

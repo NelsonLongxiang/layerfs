@@ -1,5 +1,5 @@
 //! Commands on inherited owner stdin; no network listener or Sandbox autostart.
-use super::{process::Shared, wire::Frame, CommitScope};
+use super::{process::Shared, wire::Frame};
 use std::{
     io::{self, BufRead, Read, Write},
     sync::{atomic::Ordering, Arc},
@@ -42,11 +42,16 @@ pub(super) fn run(shared: Arc<Shared>) {
     let mut previous = 0u64;
     loop {
         let mut line = Vec::new();
-        let read = (&mut input).take(129).read_until(b'\n', &mut line);
-        if !matches!(read,Ok(n) if n>0) || line.len() > 128 || !line.ends_with(b"\n") {
-            shared.keep(Box::new(io::Error::other(format!(
-                "control input ended or invalid: bytes={line:02x?}, result={read:?}"
-            ))));
+        let maximum = super::control_commit::CONTROL_BYTES;
+        let read = (&mut input)
+            .take(maximum as u64 + 1)
+            .read_until(b'\n', &mut line);
+        if !matches!(read,Ok(n) if n>0) || line.len() > maximum || !line.ends_with(b"\n") {
+            shared.keep(Box::new(ControlFailure {
+                id: 0,
+                input: line,
+                cause: io::Error::other(format!("control input ended or invalid: {read:?}")),
+            }));
             shared.lose();
             let _ = emit(
                 &shared,
@@ -56,7 +61,12 @@ pub(super) fn run(shared: Arc<Shared>) {
         }
         let text = match std::str::from_utf8(&line) {
             Ok(t) => t,
-            Err(_) => {
+            Err(cause) => {
+                shared.keep(Box::new(ControlFailure {
+                    id: 0,
+                    input: line,
+                    cause: io::Error::new(io::ErrorKind::InvalidData, cause),
+                }));
                 shared.lose();
                 return;
             }
@@ -67,6 +77,11 @@ pub(super) fn run(shared: Arc<Shared>) {
             .and_then(|v| v.parse::<u64>().ok())
             .filter(|v| *v > previous);
         let Some(id) = id else {
+            shared.keep(Box::new(ControlFailure {
+                id: 0,
+                input: line,
+                cause: io::Error::other("control identity did not advance"),
+            }));
             shared.lose();
             let _ = emit(&shared, "NATIVE_SERVICE_CONTROL_PROTOCOL retained=true");
             return;
@@ -164,61 +179,7 @@ pub(super) fn run(shared: Arc<Shared>) {
                         ),
                     }
                 }
-                [_, "commit", "published"] | [_, "commit", "published", "identity"] => {
-                    let identity = words.len() == 4;
-                    let work = {
-                        let mut s = shared
-                            .session
-                            .lock()
-                            .map_err(|_| io::Error::other("Session poisoned"))?;
-                        s.as_mut()
-                            .ok_or_else(|| io::Error::other("Session closed"))?
-                            .begin_commit(CommitScope::Published)
-                    };
-                    let work = match work {
-                        Ok(w) => w,
-                        Err(e) => {
-                            return emit(
-                                &shared,
-                                &format!(
-                                    "NATIVE_SERVICE_REFUSED id={id} status={:08x}",
-                                    e.status as u32
-                                ),
-                            )
-                        }
-                    };
-                    let completion = work.run();
-                    let answer = {
-                        let mut s = shared
-                            .session
-                            .lock()
-                            .map_err(|_| io::Error::other("Session poisoned"))?;
-                        s.as_mut()
-                            .ok_or_else(|| io::Error::other("Session closed"))?
-                            .complete_commit(completion)
-                    };
-                    match answer {
-                        Ok(receipt) => {
-                            let line = if identity {
-                                super::receipt::commit(&receipt, id)
-                            } else {
-                                format!("NATIVE_SERVICE_COMMIT id={id} changed={} revision={} published=true",receipt.changed,receipt.frontier.revision)
-                            };
-                            if let Err(e) = emit(&shared, &line) {
-                                std::mem::forget(receipt);
-                                return Err(e);
-                            }
-                            Ok(())
-                        }
-                        Err(e) => emit(
-                            &shared,
-                            &format!(
-                                "NATIVE_SERVICE_REFUSED id={id} status={:08x}",
-                                e.status as u32
-                            ),
-                        ),
-                    }
-                }
+                [_, "commit", "published", ..] => super::control_commit::run(&shared, id, &words),
                 [_, "unmount"] | [_, "unmount", "clean"] | [_, "unmount", "discard"] => {
                     let clean = words.get(2).is_some_and(|s| *s == "clean");
                     let mut pending = shared

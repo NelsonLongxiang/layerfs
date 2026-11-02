@@ -91,7 +91,10 @@ filesystem path substitution race.
 `root`, revision/count fields from `status` and Commit revision are `bigint`
 so 64-bit values are not rounded. `commit("published")` returns
 `{ changed, revision, scope: "published", published: true }`. No omitted/default
-scope, force, message or application-visible mapping capture is inferred.
+scope, force or application-visible mapping capture is inferred. An optional third
+argument on `commit("published", details, message)` supplies the same bounded
+message as the SDK. Omitting that third argument preserves the legacy native
+default; explicitly passing `undefined` selects the Store Workspace default.
 
 ### Native reference observation
 
@@ -222,8 +225,8 @@ The returned { sandbox, image: null, mode: "windows-restricted" } names this
 instance on those clients. project.list_sandboxes and sandbox.list_workspaces
 report it explicitly in that native mode. It is not a container-image creation:
 sandbox.create(image) stays Unsupported. workspace.exec’s Bash command contract,
-background process APIs, forced unmount, custom Commit message and force-Commit
-remain Unsupported. Explicit native command objects below delegate the original
+background process APIs, forced unmount and force-Commit remain Unsupported.
+Commit messages use the ordinary SDK validation and semantics described below. Explicit native command objects below delegate the original
 Session command owner; the SDK registration does not pretend that Windows
 argument-vector execution is Bash.
 
@@ -249,6 +252,27 @@ scope: "published", published: true. These are the original product completion
 receipt, not a post-hoc latest-History query. The native subset does not synthesize
 the container Commit record’s storage/timing/message/LWW fields; read History or
 Store storage separately if those are needed. No automatic Commit or retry occurs.
+
+SDK workspace.commit(ws, message) now preserves an explicit message exactly through
+the original native CommitWork and the Store's existing CommitOptions. Validation
+is the ordinary SDK UTF-8 limit of 4096 bytes, with no controls except newline/tab;
+null, non-text, unpaired surrogates and over-limit messages refuse InvalidInput
+before native admission. Empty text stays empty. Omitted or undefined SDK messages
+use the Store's existing "Commit Workspace changes" default, not the former native
+hard-coded description. A message alone never creates a Commit: UpToDate keeps the
+same head/root and History. Force remains Unsupported.
+
+The same inherited owner channel carries one length-bounded ASCII control record:
+hex encodes the message so newline/tab cannot become commands. The processing
+window is 128 bytes of command overhead plus two times the public 4096-byte field
+bound (8320 bytes total); it is not a new file/Workspace/flow limit. No multipart
+upload state, temporary message file, network listener, Store RPC, decoder fallback
+or failed-operation replay is added. Native History validation is reused before
+capture. The original completion keeps the selected message and outcome together
+through failure/uncertainty; known publication checks its explicit message before
+releasing that owner. Read History for actual persisted metadata; the native
+publication receipt's identity fields are not reconstructed from a later lookup.
+See the [message implementation record](../../core/docs/issues/352/WINDOWS-NATIVE-COMMIT-MESSAGE-2026-11-03.md).
 
 Normal SDK unmount defaults to discard: false. After fencing complete native
 callbacks, the product Session refuses Dirty before receive-stop/terminal effects

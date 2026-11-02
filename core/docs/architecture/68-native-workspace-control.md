@@ -260,8 +260,18 @@ erasure. Only holders of the inherited streams can issue commands: there is no
 public listener, endpoint discovery, reconnection or remote authentication claim.
 After native root-service evidence, strictly increasing nonzero command ids admit
 status, commit published, and unmount; each reply carries the original id. Control
-records have a 128-byte processing bound; path/data transfers use separate bounded
-frames, not a total Workspace/file/flow limit. A failed command is never replayed.
+records have an 8320-byte processing bound: 128 bytes of command overhead plus
+hex encoding of the existing 4096-byte Commit message field. The
+[Commit control](../../../engine/crates/layerfs-daemon/src/native/control_commit.rs)
+accepts exactly one optional UTF-8 message, validates it through History before
+capture and passes it to the original CommitWork/Store CommitOptions. No multipart
+state or second metadata owner is introduced. Explicit messages remain with the
+original completion until checked settlement; failed/unknown work keeps that
+completion and exact metadata. Omitted SDK metadata selects the existing Store
+Workspace default; legacy direct calls without the new field keep their original
+native default. UpToDate never publishes metadata-only history. Path/data transfers
+use separate bounded frames, not a total Workspace/file/flow limit. A failed command
+is never replayed. See the [native message contract](../../../api/docs/runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
 
 The private child channel uses versioned, length-bounded LFSRPC01 frames and
 monotonic request/response identity. [Workspace dispatch](../../../engine/crates/layerfs-daemon/src/native/port.rs)
