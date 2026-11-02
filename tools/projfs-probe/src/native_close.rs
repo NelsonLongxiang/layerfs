@@ -12,9 +12,9 @@ pub struct CloseState {
 }
 impl Session {
     pub(super) fn accepting(&self) -> Result<()> {
-        if self.retained_lookup.is_some() {
+        if self.retained_lookup.is_some() || self.retained_open.is_some() {
             return Err(failed(
-                "original kernel lookup failure retained; no further admission",
+                "original kernel read/open failure retained; no further admission",
             ));
         }
         if self.closing {
@@ -43,7 +43,8 @@ impl Session {
                 self.retained_commit.is_some()
                     || self.retained_success.is_some()
                     || !self.retained_completions.is_empty()
-                    || self.retained_lookup.is_some(),
+                    || self.retained_lookup.is_some()
+                    || self.retained_open.is_some(),
             ),
             prepared: u32::from(self.closing),
         }

@@ -593,3 +593,21 @@ Workspace. They create only synthetic Stores via the existing test fixture. This
 step does not remove the SDK's Windows Workspace refusal, start a Sandbox or add a
 product dependency on this diagnostic. See the
 [product lookup result](../../core/docs/issues/352/WINDOWS-PRODUCT-LOOKUP-2026-11-02.md).
+
+## Product file and directory open composition
+
+Native file/directory Open now consumes StoreOperation::kernel_open and its typed
+File/Directory descriptor. Lookup and Open share one product observation/fact-supply
+loop instead of duplicate adapter loops. The original request, successful receipt,
+kind/identity/access checks and provider scope stay in the product result. A failed
+open keeps its original scope/observation in Session unless it is a definitive,
+effect-free semantic refusal; only that case gives back the adapter's own lookup.
+Actual Close, not Cleanup, FORGET or dropping a receipt, ends descriptor ownership.
+
+[Direct product Open tests](tests/product_kernel_open.rs) cover independent lookup
+and descriptors, reopen of an unlinked serial, remaining readonly orphan reads after
+writable Close, directory ownership after FORGET, wrong kinds, foreign/revoked mounts
+and unreferenced serial rejection with a healthy sibling Workspace. These tests use
+real StoreService/Overlay public ports, not Session, with the existing synthetic
+Store fixture. No SDK Unsupported branch or product dependency on tools is removed.
+See the [product Open result](../../core/docs/issues/352/WINDOWS-PRODUCT-OPEN-2026-11-02.md).

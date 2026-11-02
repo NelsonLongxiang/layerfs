@@ -18,9 +18,7 @@ use layerfs_store_service::{
     write::mutation::Mutation,
     StoreService,
 };
-use layerfs_workspace::{
-    KernelReadDecision, Operation, Position, ViewStat, VisitFacts, WorkspaceError,
-};
+use layerfs_workspace::{Operation, Position, ViewStat, WorkspaceError};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -160,6 +158,7 @@ pub struct Session {
     retained_commit: Option<Box<CommitFailure>>,
     retained_success: Option<Box<layerfs_store_service::store::CommitSuccess>>,
     retained_lookup: Option<Box<layerfs_store_service::store::KernelLookupFailure>>,
+    retained_open: Option<Box<layerfs_store_service::store::KernelOpenFailure>>,
 }
 impl Session {
     pub fn create(path: &Path) -> Result<Self> {
@@ -247,6 +246,7 @@ impl Session {
             retained_commit: None,
             retained_success: None,
             retained_lookup: None,
+            retained_open: None,
         })
     }
     fn sequence(&mut self) -> Result<u64> {
@@ -387,69 +387,47 @@ impl Session {
         }
         let request = self.sequence()?;
         let op = self.bound.operation().map_err(workspace_error)?;
-        let mut facts = VisitFacts::default();
-        let result = (|| loop {
-            let visit = if stat.directory != 0 {
-                op.workspace().kernel_opendir_visit(
-                    op.resident(),
-                    self.mount,
-                    request,
-                    stat.serial,
-                    Arc::new(facts.clone()),
-                )
-            } else {
-                op.workspace().kernel_open_visit(
-                    op.resident(),
-                    self.mount,
-                    request,
-                    stat.serial,
-                    data_writable || attributes_writable,
-                    Arc::new(facts.clone()),
-                )
+        let kind = if stat.directory != 0 {
+            layerfs_store_service::store::KernelOpenKind::Directory
+        } else {
+            layerfs_store_service::store::KernelOpenKind::File {
+                writable: data_writable || attributes_writable,
             }
-            .map_err(workspace_error)?;
-            let observed = op
-                .overlay()
-                .kernel_observe_visit(self.bound.route(), Box::new(visit))
-                .map_err(failed)?;
-            observed.result.as_ref().map_err(failed)?;
-            match observed.decision.as_ref() {
-                Some(KernelReadDecision::Value(_)) => {
-                    return Ok(Handle {
-                        serial: stat.serial,
-                        file: observed.open_candidate,
-                        directory: observed.directory_candidate,
-                        lookup,
-                        data_writable,
-                        attributes_writable,
-                        delete_access: access & 4 != 0,
-                        cleaned: false,
-                        path: Some(path.to_owned()),
-                    })
+        };
+        let opened = match op.kernel_open(self.mount, request, stat.serial, kind) {
+            Ok(value) => value,
+            Err(failure) => {
+                if let Some(refusal) = failure.refusal() {
+                    if lookup {
+                        failure
+                            .operation()
+                            .overlay()
+                            .kernel_forget(self.bound.route(), self.mount, stat.serial, 1)
+                            .map_err(failed)?;
+                    }
+                    return Err(workspace_error(WorkspaceError::Refused(refusal)));
                 }
-                Some(KernelReadDecision::Needs(needs)) => facts
-                    .supply(
-                        &op.workspace().base().map_err(workspace_error)?,
-                        needs,
-                        None,
-                    )
-                    .map_err(workspace_error)?,
-                Some(KernelReadDecision::Refused(r)) => {
-                    return Err(workspace_error(WorkspaceError::Refused(*r)))
-                }
-                other => return Err(failed(format!("open outcome {other:?}"))),
+                let error = failed(&failure);
+                self.retained_open = Some(failure);
+                return Err(error);
             }
-        })();
-        let held = match result {
-            Ok(v) => v,
-            Err(e) => {
-                if lookup && e.status != 0xc0000001u32 as i32 {
-                    op.overlay()
-                        .kernel_forget(self.bound.route(), self.mount, stat.serial, 1)
-                        .map_err(failed)?;
-                }
-                return Err(e);
+        };
+        let (file, directory) = match opened.descriptor {
+            layerfs_store_service::store::KernelDescriptor::File(file) => (Some(file), None),
+            layerfs_store_service::store::KernelDescriptor::Directory(directory) => {
+                (None, Some(directory))
             }
+        };
+        let held = Handle {
+            serial: stat.serial,
+            file,
+            directory,
+            lookup,
+            data_writable,
+            attributes_writable,
+            delete_access: access & 4 != 0,
+            cleaned: false,
+            path: Some(path.to_owned()),
         };
         self.handles.insert(request, held);
         Ok((request, stat))

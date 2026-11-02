@@ -28,6 +28,37 @@ fact-supply loop. Nonsemantic failures remain stored in its Session and fence la
 admission and normal close. This component reuse is not production Windows Workspace
 mount/status/Commit/unmount integration; the SDK still refuses that family.
 
+## Store-backed kernel OPEN and OPENDIR composition (2026-11-02)
+
+[StoreOperation::kernel_open](../../../engine/crates/layerfs-store-service/src/store/kernel_open.rs)
+composes the existing atomic file/directory-open visits for a serial already
+referenced by the supplied kernel mount. Lookup and open share one private
+[observation loop](../../../engine/crates/layerfs-store-service/src/store/kernel_observation.rs):
+only successful, effect-free Needs observations are continued with scoped immutable
+facts supplied outside the Overlay lock. An error is returned once, not retried.
+The public lookup cause name remains an alias of the same original-boundary type.
+
+KernelOpened contains the inode, a typed File or Directory descriptor, the exact
+successful observation and the originating StoreOperation. A candidate is adopted
+only after successful completion and agreement with the requested kind, serial,
+engine/mount and file write capability. OPEN acquires no lookup reference and
+FORGET closes no descriptor. Dropping this Rust receipt closes nothing: the adapter
+uses the existing explicit kernel file/directory Close after actual release.
+A removed file remains openable by its referenced serial; an already-open file can
+outlive both its last name and lookup reference, with readonly/write access intact.
+
+KernelOpenFailure retains mount, request, serial, requested kind, original cause,
+last observation and operation scope. A candidate alongside failed completion is
+only evidence, not a descriptor to adopt or close speculatively. A definite semantic
+refusal requires Ok(None), a Refused decision and no descriptor candidates. The
+Windows adapter releases its own lookup only for that definitive refusal; other
+open failures remain retained in Session and prevent new admission/normal close.
+
+These are shared product components used by actual WinFsp callbacks, not a Windows
+SDK mount, Ready/drain proof for arbitrary sections, new permission policy, or a
+replacement native backend. Kernel attachment, command execution and Sandbox
+ownership remain separate. The SDK Windows Workspace family still refuses.
+
 **Contract for anything that collects Store objects or releases a base
 root (owner decision 2026-10-09).** An in-flight READ, READLINK, OPEN or
 directory read holds no `base_readers` count and no SQL custody row. Between
