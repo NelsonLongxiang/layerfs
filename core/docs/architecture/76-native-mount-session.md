@@ -2,6 +2,45 @@
 
 > **Status:** Current general guide.
 
+## Windows WinFsp connection owner (2026-11-02)
+
+[WinFspMount](../../../engine/crates/layerfs-fuse/src/windows/mount.hpp) is a
+concrete native C++ owner for the installed WinFsp library, copied callback table,
+filesystem object, mountpoint, dispatcher and the initial kernel root request.
+[Implementation](../../../engine/crates/layerfs-fuse/src/windows/mount.cpp) loads
+one explicit absolute library, refuses an existing/non-absolute mountpoint, and
+attempts create/mount/start once. It then opens the mounted root through ordinary
+Windows I/O and checks directory kind, volume serial and bound inode serial.
+RootServed means this root request was served; it is not SDK Ready or proof of
+all receive-loop entry, full namespace qualification or arbitrary section drain.
+
+Each owner retains its completed phase, first failing step, NTSTATUS/Win32 error
+and native resources. Invalid state calls have no effects and do not replace the
+original failure. Failed partial startup is not retried or guessed rolled back.
+Destruction does not implicitly detach: an abandoned live/failed owner deliberately
+keeps its heap state, DLL, copied callbacks and filesystem until process end. The
+control owner and callback context must remain alive through native drain; callers
+must not unload their callback implementation while the native owner is retained.
+
+Normal close remains composed: caller checks descriptor/capture/Commit custody
+and fences product request admission, then WinFspMount::stop performs the native
+stop/join once. It refuses a dispatcher failure already observed before stop and
+preserves the raw post-stop result. A previously healthy explicit stop accepts
+STATUS_CANCELLED from WinFsp's STOP0 receive termination; other negative results
+are retained, not normalized to success. After stop, detach removes the mountpoint
+and deletes the filesystem. Only after logical Overlay close may release_library
+end DLL ownership. No public method automatically releases a request, file,
+lookup or mapped section to make these boundaries pass.
+
+The existing diagnostic host now links this product translation unit instead of
+owning another WinFsp create/mount/start/stop/delete sequence. The native build is
+explicit MSVC compilation; Cargo does not compile this C++ unit or expose it via
+Rust. Product source counting and guards include its implementation and header;
+external C++ tests remain outside src. This adds no Rust unsafe exemption, new
+library, vendor patch, worker, Store encoder or SDK Unsupported removal. The
+Windows SDK Workspace/Sandbox runtime and service registration remain unconnected.
+The Linux session described below keeps its original contract and implementation.
+
 This record describes the implemented R2 composition: one Linux kernel
 connection per attached Workspace, its Ready evidence, the control records that
 carry it, and normal terminal unmount. R3 added ordinary mutation on the same

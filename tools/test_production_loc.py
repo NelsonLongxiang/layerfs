@@ -75,7 +75,7 @@ class CounterTests(unittest.TestCase):
             write(self.root, f"core/crates/layerfs-api/{name}", "pub fn value() {}\n")
         files = production_loc.scope_files(self.root, "engine")
         self.assertEqual(
-            [str(path.relative_to(self.root / "core/crates/layerfs-api")) for path in files],
+            [path.relative_to(self.root / "core/crates/layerfs-api").as_posix() for path in files],
             ["core/src/lib.rs", "sdk/src/client.rs"],
         )
         self.assertEqual(production_loc.scan(self.root)["scopes"]["engine"]["lines"], 2)
@@ -100,7 +100,7 @@ class CounterTests(unittest.TestCase):
         write(self.root, "api/binding/examples/restore_record.rs", "pub fn example() {}\n")
         files = production_loc.scope_files(self.root, "api")
         self.assertEqual(
-            sorted(str(path.relative_to(self.root / "api")) for path in files),
+            sorted(path.relative_to(self.root / "api").as_posix() for path in files),
             [
                 "agent/cli/src/index.js",
                 "agent/sdk/src/index.js",
@@ -291,13 +291,17 @@ class CounterTests(unittest.TestCase):
         write(self.root, "crates/example/tests/it.rs", "pub const T: u8 = 1;\n")
         write(self.root, "crates/example/examples/demo.rs", "pub const E: u8 = 1;\n")
         write(self.root, "crates/example/benches/bench.rs", "pub const B: u8 = 1;\n")
-        relative = [str(path.relative_to(self.root)) for path in production_loc.scope_files(self.root, "reference")]
+        relative = [
+            path.relative_to(self.root).as_posix() for path in production_loc.scope_files(self.root, "reference")
+        ]
         self.assertEqual(relative, ["crates/example/src/lib.rs"])
 
     def test_target_directories_are_excluded(self):
         write(self.root, "crates/example/src/lib.rs", "pub const N: u8 = 1;\n")
         write(self.root, "crates/example/target/generated.rs", "pub const G: u8 = 1;\n")
-        relative = [str(path.relative_to(self.root)) for path in production_loc.scope_files(self.root, "reference")]
+        relative = [
+            path.relative_to(self.root).as_posix() for path in production_loc.scope_files(self.root, "reference")
+        ]
         self.assertEqual(relative, ["crates/example/src/lib.rs"])
 
     def test_scan_separates_scopes_and_reports_a_combined_total(self):
@@ -308,6 +312,23 @@ class CounterTests(unittest.TestCase):
         self.assertEqual(result["scopes"]["reference"]["lines"], 1)
         self.assertEqual(result["scopes"]["core"]["lines"], 2)
         self.assertEqual(result["combined"], 3)
+
+    def test_native_cpp_and_headers_are_product_source(self):
+        cpp = write(
+            self.root,
+            "engine/crates/layerfs-fuse/src/windows/mount.cpp",
+            '// comment\n#include "mount.hpp"\n/* comment\ncontinued */\nconst char *s = "https://native"; // tail\n',
+        )
+        header = write(
+            self.root,
+            "engine/crates/layerfs-fuse/src/windows/mount.hpp",
+            "#pragma once\n// declaration\nclass Mount {};\n",
+        )
+        write(self.root, "engine/crates/layerfs-fuse/tests/native.cpp", "int main() {}\n")
+        self.assertEqual(production_loc.scope_files(self.root, "engine"), [cpp, header])
+        self.assertEqual(production_loc.counted_lines(cpp), 2)
+        self.assertEqual(production_loc.counted_lines(header), 2)
+        self.assertEqual(production_loc.scan(self.root)["scopes"]["engine"]["lines"], 4)
 
     def test_per_file_reporting_separates_production_and_physical_lines(self):
         write(

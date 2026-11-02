@@ -330,9 +330,8 @@ def unsafe_violations(path, source):
         return found
     relative = Path(*path.parts[path.parts.index("src") :])
     code = "\n".join(line.split("//", 1)[0] for line in source.splitlines())
-    if UNSAFE.search(code):
-        if crate in UNSAFE_FREE_CRATES or relative.as_posix() not in UNSAFE_AUDITED_MODULE[crate]:
-            found.append((1, "unsafe outside the audited module boundary; see core/AGENTS.md"))
+    if UNSAFE.search(code) and (crate in UNSAFE_FREE_CRATES or relative.as_posix() not in UNSAFE_AUDITED_MODULE[crate]):
+        found.append((1, "unsafe outside the audited module boundary; see core/AGENTS.md"))
     if relative == Path("src/lib.rs") and UNSAFE_ROOT_ATTR[crate] not in source:
         found.append((1, f"crate root must declare {UNSAFE_ROOT_ATTR[crate]}"))
     return found
@@ -348,6 +347,15 @@ def violations(path, source):
         kind = "entry file" if entry else "production file"
         found.append((limit + 1, f"{kind} has {len(lines)} physical lines; maximum is {limit}"))
     found.extend(overlay_terminology_violations(path, source))
+    if path.suffix in (".cpp", ".hpp"):
+        for number, line in enumerate(lines, 1):
+            if re.match(r"^\s*#\s*(?:if|ifdef|ifndef|elif)\b.*(?:TEST|MOCK|FIXTURE|BENCH)", line):
+                found.append((number, "test-only preprocessor branch in product source"))
+            if re.match(r"^\s*#\s*include.*(?:tools/|tests/|examples/|benches/)", line.replace(chr(92), "/")):
+                found.append((number, "product native source includes non-product input"))
+        if re.search(r'\b(?:u8|u|U|L)?R"', source):
+            found.append((1, "C++ raw literal requires native LOC scanner support"))
+        return found
     if path.suffix != ".rs":
         return found
     for match in ATTR.finditer(source):
@@ -407,7 +415,11 @@ def production_files(root, include_sdk=True):
             continue
         if not package.is_dir():
             continue
-        files.update(path for path in (package / "src").rglob("*") if path.is_file() and path.suffix in (".rs", ".sql"))
+        files.update(
+            path
+            for path in (package / "src").rglob("*")
+            if path.is_file() and path.suffix in (".rs", ".sql", ".cpp", ".hpp")
+        )
         files.update(path for path in (package / "sql").rglob("*.sql") if path.is_file())
     if not include_sdk:
         return sorted(files)
@@ -449,7 +461,7 @@ def main():
     if failures:
         print(f"FAIL: {failures} product-source boundary violations")
         return 1
-    print(f"PASS: scanned {len(files)} production Rust/SQL/JavaScript files; semantic review still required")
+    print(f"PASS: scanned {len(files)} production Rust/SQL/JavaScript/C++ files; semantic review still required")
     if not files:
         print("No product source exists yet; this is only a policy setup check.")
     return 0

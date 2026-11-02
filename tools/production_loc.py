@@ -5,7 +5,8 @@ Production code is nonblank, non-comment first-party product implementation:
 the product under core/crates/*/src and engine/crates/*/src (layerfs-api and the
 layerfs-node binding were api/layerfs-api and api/binding before the api/
 regrouping, and are counted there too), and the reference product under crates/*/src, plus shipped runtime SQL under
-<crate>/sql/. Tests, examples, benches, fixtures, benchmark harnesses,
+<crate>/sql/. Native C++ implementation/headers under src/ count too.
+Tests, examples, benches, fixtures, benchmark harnesses,
 development tools, docs, manifests and generated artifacts are excluded. Legacy
 inline #[cfg(test)] items are removed before counting, because the reference tree
 keeps tests inside src/.
@@ -50,14 +51,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 SKIP_DIRS = {"target", "tests", "examples", "benches", "node_modules"}
 DSH_SKIP_DIRS = SKIP_DIRS | {"dist", "assets"}
 JS_SUFFIXES = (".js", ".ts", ".tsx")
-CODE_SUFFIXES = (".rs",)
+CODE_SUFFIXES = (".rs", ".cpp", ".hpp")
 
 
 def blank_rust(source: str) -> str:
@@ -260,6 +261,8 @@ def test_only_files(files: list) -> set:
     while changed:
         changed = False
         for path in files:
+            if path.suffix != ".rs":
+                continue
             text = blank_rust(path.read_text(encoding="utf-8"))
             # A declaration inside a file that is itself test-only is test-only too,
             # which is how a nested diagnostic beside its parent test module is
@@ -345,6 +348,10 @@ def counted_lines(path: Path) -> int:
     text = path.read_text(encoding="utf-8")
     if path.suffix == ".rs":
         text = blank_inline_tests(blank_rust(text))
+    elif path.suffix in (".cpp", ".hpp"):
+        # C++ native adapters use the same // and /* */ comments and quoted
+        # strings as this scanner; there are no raw literals in shipped C++.
+        text = blank_js(text)
     elif path.suffix == ".sql":
         text = blank_sql(text)
     elif path.suffix in JS_SUFFIXES:

@@ -2,24 +2,16 @@
 // winfsp-probe.exe <installed-WinFsp-dll> <new-mount> <new-control>
 // <Rust-bridge-dll>
 #define NOMINMAX
+#include "mount.hpp"
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
-#include <atomic>
-#include <thread>
-#include <string>
-#include <winfsp/winfsp.h>
 #include <sddl.h>
-struct Api {
-  HMODULE dll = nullptr;
-  decltype(&FspFileSystemCreate) create = nullptr;
-  decltype(&FspFileSystemDelete) destroy = nullptr;
-  decltype(&FspFileSystemSetMountPoint) mount = nullptr;
-  decltype(&FspFileSystemRemoveMountPoint) unmount = nullptr;
-  decltype(&FspFileSystemStartDispatcher) start = nullptr;
-  decltype(&FspFileSystemStopDispatcher) stop = nullptr;
-  decltype(&FspFileSystemAddDirInfo) add = nullptr;
-} api;
+#include <string>
+#include <thread>
+#include <winfsp/winfsp.h>
+static layerfs::WinFspMount native_mount;
 
 struct Stat {
   UINT64 serial, size;
@@ -400,7 +392,7 @@ static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
         di->FileNameBuf[0] = L'.';
         if (parent)
           di->FileNameBuf[1] = L'.';
-        if (!api.add(di, buffer, capacity, count))
+        if (!native_mount.add_dir_info(di, buffer, capacity, count))
           return STATUS_SUCCESS;
       }
     }
@@ -419,7 +411,7 @@ static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
     if (status < 0)
       return status;
     if (!len) {
-      api.add(nullptr, buffer, capacity, count);
+      native_mount.add_dir_info(nullptr, buffer, capacity, count);
       return STATUS_SUCCESS;
     }
     alignas(8) BYTE row[sizeof(FSP_FSCTL_DIR_INFO) + 512]{};
@@ -427,7 +419,7 @@ static NTSTATUS directory(FSP_FILE_SYSTEM *, PVOID ctx, PWSTR, PWSTR marker,
     di->Size = static_cast<UINT16>(sizeof(*di) + len * sizeof(WCHAR));
     fill(stat, &di->FileInfo);
     memcpy(di->FileNameBuf, name, len * sizeof(WCHAR));
-    if (!api.add(di, buffer, capacity, count))
+    if (!native_mount.add_dir_info(di, buffer, capacity, count))
       return STATUS_SUCCESS;
     name[len] = 0;
     wcscpy_s(after, name);
@@ -600,13 +592,10 @@ int wmain(int argc, wchar_t **argv) {
     fwprintf(stderr, L"refusing invalid/existing control\n");
     return 1;
   }
-  api.dll = LoadLibraryExW(argv[1], nullptr,
-                           LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
-                               LOAD_LIBRARY_SEARCH_SYSTEM32);
   bridge.dll = LoadLibraryExW(argv[4], nullptr,
                               LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
-  if (!api.dll || !bridge.dll) {
+  if (!bridge.dll) {
     fprintf(stderr, "DLL load failed %lu\n", GetLastError());
     return 2;
   }
@@ -617,13 +606,6 @@ int wmain(int argc, wchar_t **argv) {
     fprintf(stderr, "export missing: " #symbol "\n");                          \
     return 2;                                                                  \
   }
-  LOAD(api, create, FspFileSystemCreate);
-  LOAD(api, destroy, FspFileSystemDelete);
-  LOAD(api, mount, FspFileSystemSetMountPoint);
-  LOAD(api, unmount, FspFileSystemRemoveMountPoint);
-  LOAD(api, start, FspFileSystemStartDispatcher);
-  LOAD(api, stop, FspFileSystemStopDispatcher);
-  LOAD(api, add, FspFileSystemAddDirInfo);
   LOAD(bridge, start, lf_start);
   LOAD(bridge, reopen, lf_reopen);
   LOAD(bridge, bind_stdin, lf_bind_stdin);
@@ -666,8 +648,9 @@ int wmain(int argc, wchar_t **argv) {
       argc == 6 && wcscmp(argv[5], L"--concurrent") == 0;
   const bool close_mode =
       argc == 6 && wcscmp(argv[5], L"--close-boundary") == 0;
-  const bool rebound =
-      argc == 6 && !cache_mode && !concurrent_mode && !close_mode;
+  const bool wrong_root = argc == 6 && wcscmp(argv[5], L"--root-mismatch") == 0;
+  const bool rebound = argc == 6 && !cache_mode && !concurrent_mode &&
+                       !close_mode && !wrong_root;
   auto started =
       binding_mode
           ? bridge.bind_stdin(argv[6], length(argv[6]), store, length(store))
@@ -711,16 +694,29 @@ int wmain(int argc, wchar_t **argv) {
   params.UmFileContextIsFullContext = 1;
   params.FlushAndPurgeOnCleanup = 1;
   wcscpy_s(params.FileSystemName, L"LayerFS-Overlay");
-  FSP_FILE_SYSTEM *fs = nullptr;
-  NTSTATUS status =
-      api.create(const_cast<PWSTR>(L"WinFsp.Disk"), &params, &callbacks, &fs);
+  NTSTATUS status = native_mount.attach(argv[1], argv[2], params, callbacks,
+                                        root.serial + (wrong_root ? 1 : 0));
   if (status < 0) {
-    fprintf(stderr, "create NTSTATUS=%08lx\n", static_cast<ULONG>(status));
+    const auto error = native_mount.failure();
+    const auto facts = native_mount.facts();
+    fprintf(stderr,
+            "NATIVE_MOUNT_FAILED step=%s status=%08lx win32=%lu phase=%u "
+            "filesystem_owned=%u library_owned=%u probe_owned=%u\n",
+            error.step, static_cast<ULONG>(error.status), error.win32,
+            static_cast<unsigned>(facts.phase), facts.filesystem_owned,
+            facts.library_owned, facts.probe_owned);
     return 1;
   }
-  status = api.mount(fs, argv[2]);
-  if (status >= 0)
-    status = api.start(fs, 2);
+  if (native_mount.facts().phase != layerfs::MountPhase::RootServed ||
+      native_mount.detach() != STATUS_INVALID_DEVICE_STATE ||
+      native_mount.release_library() != STATUS_INVALID_DEVICE_STATE ||
+      native_mount.attach(argv[1], argv[2], params, callbacks, root.serial) !=
+          STATUS_INVALID_DEVICE_STATE ||
+      native_mount.failure().step)
+    return 1;
+  printf("NATIVE_MOUNT_ROOT_SERVED serial=%llu volume=%08lx owned=true\n",
+         root.serial, params.VolumeSerialNumber);
+  fflush(stdout);
   bool done = false, captured = false, checked = false;
   bool committed1 = false, committed2 = false, unchanged = false;
   unsigned cache_phase = 0;
@@ -1152,12 +1148,29 @@ int wmain(int argc, wchar_t **argv) {
   }
   puts("NORMAL_CLOSE_STOP_BEGIN prepared=true");
   fflush(stdout);
-  api.stop(fs);
+  if (native_mount.stop() < 0) {
+    const auto error = native_mount.failure();
+    fprintf(stderr, "NATIVE_MOUNT_STOP_FAILED step=%s status=%08lx\n",
+            error.step ? error.step : "state",
+            static_cast<ULONG>(error.status));
+    return 1;
+  }
+  printf("NATIVE_MOUNT_DISPATCHER_STOPPED result=%08lx explicit_stop=true\n",
+         static_cast<ULONG>(native_mount.facts().dispatcher_exit));
+  if (native_mount.facts().phase != layerfs::MountPhase::Stopped ||
+      native_mount.stop() != STATUS_INVALID_DEVICE_STATE)
+    return 1;
   puts("NORMAL_CLOSE_DISPATCHER_DRAINED");
   fflush(stdout); // Keep the completed native drain before Rust finish in the
                   // receipt.
-  api.unmount(fs);
-  api.destroy(fs);
+  if (native_mount.detach() < 0)
+    return 1;
+  if (native_mount.facts().phase != layerfs::MountPhase::Detached ||
+      native_mount.facts().filesystem_owned ||
+      native_mount.detach() != STATUS_INVALID_DEVICE_STATE)
+    return 1;
+  puts("NATIVE_MOUNT_DETACHED filesystem_destroyed=true");
+  fflush(stdout);
   LocalFree(security);
   auto closed = bridge.finish();
   if (closed == 0)
@@ -1168,7 +1181,13 @@ int wmain(int argc, wchar_t **argv) {
          callback_error);
   if (closed == 0) {
     FreeLibrary(bridge.dll);
-    FreeLibrary(api.dll);
+    if (native_mount.release_library() < 0 ||
+        native_mount.facts().phase != layerfs::MountPhase::Closed ||
+        native_mount.facts().library_owned ||
+        native_mount.release_library() != STATUS_INVALID_DEVICE_STATE)
+      return 1;
+    puts("NATIVE_MOUNT_OWNER_PASS root_served=true stopped=true detached=true "
+         "library_closed=true one_attempt=true");
   } // failure keeps original Rust owner state until process ends
   puts("NOT_RUN product_Workspace general_concurrency mapped_lifecycle "
        "full_repository");

@@ -633,3 +633,29 @@ The consumer now directly depends on existing product layerfs-fuse. Its separate
 lock resolves Linux-only fuser through the same authorized source pin as the root;
 registry package versions match the root lock. No dependency source is modified.
 See the [request lifecycle result](../../core/docs/issues/352/WINDOWS-NATIVE-REQUESTS-2026-11-02.md).
+
+## Product WinFsp mount owner
+
+The host now links the product WinFspMount implementation under layerfs-fuse's
+native Windows source, not a diagnostic copy of create/mount/start/stop/detach.
+It owns the copied callback table, WinFsp DLL, filesystem and mountpoint for one
+attempt. RootServed is established by an actual mounted-root open and matching
+volume/inode identity, not by a marker or successful thread spawn. It is still
+not product SDK Ready. Partial failure retains the first cause and native owners;
+there is no destructor unmount or automatic rollback/retry.
+
+Normal close admission stays reversible until the existing product request lane
+and descriptor checks succeed. The owner then stops/joins the native dispatcher,
+records the raw exit, detaches/deletes the filesystem, and releases the DLL only
+after logical Close succeeds. Normal STOP0 causes STATUS_CANCELLED in the pinned
+WinFsp receiver; an already-failed dispatcher or another negative exit is not
+accepted. The diagnostic records each stage and checks duplicate/out-of-order
+calls are refused without replay.
+
+Build the host with tools/winfsp-build.ps1 as before; -MountOwnerTests builds the
+external direct C++ test with the same product source and /W4 /WX. The additional
+owner controller exercises a real post-mount root mismatch and verifies it never
+reports Ready. Both native implementation and header count as product LOC and are
+covered by the source guard. SDK mount/status/Commit/unmount and Sandbox registration
+are unchanged; this product component is consumed by a non-shipped diagnostic.
+See the [mount owner result](../../core/docs/issues/352/WINDOWS-MOUNT-OWNER-2026-11-02.md).

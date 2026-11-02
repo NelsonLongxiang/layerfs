@@ -387,6 +387,26 @@ class ProductBoundaryTests(unittest.TestCase):
         self.assertFalse(unsafe_violations(Path("crates/other/src/lib.rs"), "fn f() { unsafe {} }"))
         self.assertFalse(unsafe_violations(Path("scope.rs"), "unsafe fn parse() {}"))
 
+    def test_native_cpp_scope_and_product_only_rules(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "engine/crates/layerfs-fuse"
+            for name in ("src/windows/mount.cpp", "src/windows/mount.hpp", "tests/native.cpp"):
+                path = package / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("// native source\n")
+            self.assertEqual(
+                [p.relative_to(package).as_posix() for p in production_files(root)],
+                ["src/windows/mount.cpp", "src/windows/mount.hpp"],
+            )
+        path = Path("engine/crates/layerfs-fuse/src/windows/mount.cpp")
+        self.assertTrue(violations(path, "#ifdef TESTING\n"))
+        self.assertTrue(violations(path, '#include "../../tools/driver.cpp"\n'))
+        self.assertTrue(violations(path, r'#include "..\..\tools\driver.cpp"'))
+        self.assertTrue(violations(path, 'const char *s = R"(value)";'))
+        self.assertTrue(violations(path, "\n" * 1000))
+        self.assertFalse(violations(path, '#include "mount.hpp"\n'))
+
     def test_shipped_sql_and_external_tests_scope(self):
         with TemporaryDirectory() as directory:
             core = Path(directory) / "core"
