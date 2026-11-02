@@ -419,6 +419,18 @@ and there is no network, registry, process-tree, quota or general host isolation
 claim. Do not represent this local boundary as complete support for untrusted
 code or an isolated SDK Sandbox.
 
+Git for Windows path normalization is also a distinct compatibility requirement.
+In the pinned Git2.46.0.windows.1 build, restricted getcwd opens this mount but
+GetFinalPathNameByHandleW with DOS naming returns error1005; its GetLongPathNameW
+fallback returns Access denied when private ancestors cannot be enumerated.
+Git init consequently exits128 before repository setup. Ordinary relative I/O
+and stat(cwd) success do not establish Git compatibility. Trusted same-user
+Sessions have separately preserved complete Git/index/ignored state across two
+publications and remounts, but a third read-only verification mount retains
+13 native references; complete Git normal-close qualification remains FAIL.
+No token/ancestor ACL widening or Mount Manager registration is selected for
+this limitation. See the [scoped Git record](../../core/docs/issues/352/WINDOWS-NATIVE-SDK-GIT-2026-11-03.md).
+
 Named IPC pipes are a separate access boundary. On the pinned Node24.12.0/libuv
 1.51.0 Windows build, a restricted command’s child_process IPC setup creates a
 pipe server but fails opening the client with Win32 error5, reported by Node as
