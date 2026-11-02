@@ -16,7 +16,7 @@ layerfs::Bytes status_body(NTSTATUS s, NTSTATUS exit = STATUS_SUCCESS) {
 }
 } // namespace
 int wmain(int argc, wchar_t **argv) {
-  if (argc != 5)
+  if (argc != 5 && argc != 6)
     return 2;
   wchar_t *end = nullptr;
   const auto root = wcstoull(argv[3], &end, 10);
@@ -29,7 +29,8 @@ int wmain(int argc, wchar_t **argv) {
     return 1;
   layerfs::WorkspaceCallbacks adapter(
       channel->port(), channel,
-      {total.QuadPart, available.QuadPart, L"LayerFS"});
+      {total.QuadPart, available.QuadPart, L"LayerFS"}, nullptr,
+      argc == 6 ? argv[5] : nullptr);
   if (adapter.status() < 0) {
     channel->event(104, status_body(adapter.status()));
     return 1;

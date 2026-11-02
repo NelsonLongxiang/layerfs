@@ -101,11 +101,18 @@ int wmain(int argc, wchar_t **argv) {
     layerfs::WorkspaceCallbacks bad_volume(port, provider, {1, 2, L"LayerFS"});
     layerfs::WorkspaceCallbacks bad_label(
         port, provider, {1024, 512, std::wstring(1000, L'x')});
+    layerfs::WorkspaceCallbacks bad_policy(
+        port, provider, {1024, 512, L"LayerFS"}, nullptr, L"S-1-5-21-1");
+    layerfs::WorkspaceCallbacks admitted(
+        port, provider, {1024, 512, L"LayerFS"}, nullptr, L"S-1-5-21-1-2-3-4");
     if (!check(invalid.status() == STATUS_INVALID_PARAMETER &&
                    !invalid.context() && !invalid.table().Open &&
                    no_provider.status() == STATUS_INVALID_PARAMETER &&
                    bad_volume.status() == STATUS_INVALID_PARAMETER &&
-                   bad_label.status() == STATUS_INVALID_PARAMETER,
+                   bad_label.status() == STATUS_INVALID_PARAMETER &&
+                   bad_policy.status() < 0 &&
+                   bad_policy.win32_error() == ERROR_INVALID_SID &&
+                   !bad_policy.context() && admitted.status() == STATUS_SUCCESS,
                "incomplete port/provider/volume refuses before native effects"))
       return 1;
   }

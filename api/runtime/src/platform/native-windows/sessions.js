@@ -27,7 +27,7 @@ function checkedPath(value, label, existing) {
 }
 function checked(options, runtime) {
   if (!options || typeof options !== "object" || Array.isArray(options)) throw invalid("native.open takes explicit process, Store, work, path and binding options");
-  const allowed = ["executable", "host", "winfsp", "store", "work", "path", "catalog", "cursor", "branch", "project", "readyTimeoutMs"];
+  const allowed = ["executable", "host", "winfsp", "store", "work", "path", "catalog", "cursor", "branch", "project", "readyTimeoutMs", "restrictedLauncher"];
   if (Object.keys(options).some((key) => !allowed.includes(key))) throw invalid("unknown native.open option; this is not sandbox.create or workspace.mount");
   const readyTimeoutMs = options.readyTimeoutMs ?? 15000;
   if (!Number.isSafeInteger(readyTimeoutMs) || readyTimeoutMs < 1 || readyTimeoutMs > 120000) throw invalid("readyTimeoutMs must be a whole number from 1 to 120000");
@@ -46,6 +46,10 @@ function checked(options, runtime) {
   const paths = Object.fromEntries(["executable", "host", "winfsp", "store", "work", "path"].map((key) => [key, checkedPath(given[key], key, !["work", "path"].includes(key))]));
   if (within(paths.work, paths.path) || within(paths.path, paths.work) || within(paths.work, paths.store) || within(paths.path, paths.store)) throw invalid("native work, mount and Store paths must have independent ownership");
   const workspace = randomBytes(32);
+  const restricted = options.restrictedLauncher === undefined ? null : {
+    executable: checkedPath(options.restrictedLauncher, "restrictedLauncher", true),
+    sid: "S-1-5-21-" + [0, 4, 8, 12].map((i) => workspace.readUInt32LE(i)).join("-"),
+  };
   if (!workspace.some((b) => b !== 0)) throw new LayerFSError("Failed", "native Workspace identity acquisition failed", null);
   if (registered) {
     const parts = [runtime.settings.home, options.project, options.branch].map((s) => Buffer.from(s, "utf8"));
@@ -54,13 +58,13 @@ function checked(options, runtime) {
     frame.write("LFSREG01"); parts.forEach((b, i) => frame.writeUInt16LE(b.length, 8 + i * 2));
     workspace.copy(frame, 14); let offset = 46;
     for (const b of parts) { b.copy(frame, offset); offset += b.length; }
-    return { ...paths, id: workspace.toString("hex"), frame, readyTimeoutMs, project: options.project, branch: options.branch };
+    return { ...paths, id: workspace.toString("hex"), frame, readyTimeoutMs, restricted, project: options.project, branch: options.branch };
   }
   const frame = Buffer.alloc(91 + options.catalog.length);
   frame.write("LFSBND01"); frame.writeUInt16LE(options.catalog.length, 8);
   Buffer.from(options.catalog).copy(frame, 10); Buffer.from(options.cursor).copy(frame, 10 + options.catalog.length);
   Buffer.from(options.branch, "hex").copy(frame, 42 + options.catalog.length); workspace.copy(frame, 59 + options.catalog.length);
-  return { ...paths, id: workspace.toString("hex"), frame, readyTimeoutMs };
+  return { ...paths, id: workspace.toString("hex"), frame, readyTimeoutMs, restricted };
 }
 
 export class NativeSessions {

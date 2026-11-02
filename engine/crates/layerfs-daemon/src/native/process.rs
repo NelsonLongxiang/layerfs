@@ -167,7 +167,14 @@ fn run() -> io::Result<()> {
         .skip(1)
         .map(PathBuf::from)
         .collect::<Vec<_>>();
-    if args.len() != 5 || args.iter().any(|p| !p.is_absolute()) {
+    if !(5..=6).contains(&args.len())
+        || args[..5].iter().any(|p| !p.is_absolute())
+        || (args.len() == 6
+            && !args[5]
+                .as_os_str()
+                .to_string_lossy()
+                .starts_with("S-1-5-21-"))
+    {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"usage: layerfs-native <absolute-native-host> <WinFsp-dll> <existing-store> <fresh-work> <fresh-mount>; binding on stdin"));
     }
     for p in &args[..3] {
@@ -194,7 +201,8 @@ fn run() -> io::Result<()> {
     .map_err(io::Error::other)?;
     let root = session.mount().root_serial();
     let lane = session.requests();
-    let mut child = Command::new(&args[0])
+    let mut launch = Command::new(&args[0]);
+    launch
         .arg(&args[1])
         .arg(&args[4])
         .arg(root.to_string())
@@ -205,8 +213,11 @@ fn run() -> io::Result<()> {
         )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()?;
+        .stderr(Stdio::inherit());
+    if args.len() == 6 {
+        launch.arg(&args[5]);
+    }
+    let mut child = launch.spawn()?;
     let child_input = child
         .stdin
         .take()

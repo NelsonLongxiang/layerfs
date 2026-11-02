@@ -36,7 +36,8 @@ public:
   // Observer code must belong to the same lifetime or to the host executable.
   WorkspaceCallbacks(const WorkspacePort &, std::shared_ptr<void> provider,
                      WorkspaceVolume volume,
-                     CallbackObserver observer = nullptr);
+                     CallbackObserver observer = nullptr,
+                     PCWSTR restricted_sid = nullptr);
   NTSTATUS status() const;
   DWORD win32_error() const;
   NTSTATUS callback_failure() const;

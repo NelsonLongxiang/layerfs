@@ -7,6 +7,7 @@ import { lstatSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { LayerFSError } from "@layerfs/agent";
 import { PassThrough } from "node:stream";
+import { restrictedProcess } from "./restricted.js";
 
 const retained = new Set();
 
@@ -46,8 +47,9 @@ function inputs(executable, args, options) {
 export class NativeCommands {
   #path;
   #changed;
+  #policy;
   #held = new Map();
-  constructor(path, changed) { this.#path = path; this.#changed = changed; }
+  constructor(path, changed, policy = null) { this.#path = path; this.#changed = changed; this.#policy = policy; }
   observation() { return { commands: this.#held.size, executionRetained: [...this.#held.values()].some((p) => p.retained) }; }
   get idle() { return this.#held.size === 0; }
   async start(executable, args, options = {}) {
@@ -66,31 +68,36 @@ export class NativeCommands {
     const complete = () => {
       if (owned.retained || owned.completed || !owned.closed || !owned.root || output.some((s) => !s.readableEnded)) return;
       owned.completed = true;
-      release(); finished.resolve(Object.freeze({ ...owned.root, command: id, pid: owned.child.pid, stdoutEnded: true, stderrEnded: true, cancellationRequested: owned.cancelRequested }));
+      release(); finished.resolve(Object.freeze({ ...owned.root, command: id, pid: restricted ? restricted.pid : owned.child.pid, restricted: Boolean(restricted), stdoutEnded: true, stderrEnded: true, cancellationRequested: owned.cancelRequested }));
     };
     const notStarted = (cause) => {
       const error = new LayerFSError("Failed", "native command could not start; no command process was created", { command: id, phase: "spawn" });
       owned.failure = { error, cause }; owned.completed = true; release();
       opened.reject(error); exited.reject(error); finished.reject(error);
     };
-    let child;
-    try { child = spawn(input.executable, input.args, { cwd: this.#path, env: input.env, shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }); }
+    let child, restricted;
+    try {
+      restricted = this.#policy ? restrictedProcess(this.#policy, input, this.#path, fail, notStarted) : null;
+      child = restricted?.child ?? spawn(input.executable, input.args, { cwd: this.#path, env: input.env, shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    }
     catch (cause) { notStarted(cause); return opened.promise; }
     owned.child = child;
-    child.once("spawn", () => {
-      if (!Number.isSafeInteger(child.pid) || child.pid === process.pid) { fail(new Error("native command identity")); return; }
-      opened.resolve(Object.freeze({ id, pid: child.pid, stdin: child.stdin, stdout: output[0], stderr: output[1], exited: exited.promise, finished: finished.promise,
+    const announce = (pid) => {
+      if (!Number.isSafeInteger(pid) || pid === process.pid) { fail(new Error("native command identity")); return; }
+      opened.resolve(Object.freeze({ id, pid, restricted: Boolean(restricted), stdin: child.stdin, stdout: output[0], stderr: output[1], exited: exited.promise, finished: finished.promise,
         cancel: () => {
           // The original ChildProcess holds the process identity. Never look up
           // a pid by name or terminate a process tree/the filesystem service.
           if (owned.root) return { requested: false, rootExited: true };
           if (owned.cancelRequested) throw new LayerFSError("Busy", "cancellation already requested for this original root process", { command: id });
           owned.cancelRequested = true;
-          try { return { requested: child.kill("SIGTERM"), rootExited: false }; }
+          try { return restricted ? restricted.cancel() : { requested: child.kill("SIGTERM"), rootExited: false }; }
           catch (cause) { fail(cause); throw owned.failure.error; }
         },
       }));
-    });
+    };
+    if (restricted) restricted.observe(announce, (root) => { owned.root = root; exited.resolve(root); });
+    else child.once("spawn", () => announce(child.pid));
     child.on("error", (cause) => { if (!child.pid) notStarted(cause); else fail(cause); });
     // Install pipe consumers before root exit: Node resumes its own stdio at
     // exit, which otherwise discards unread output. These exposed streams keep
@@ -108,12 +115,14 @@ export class NativeCommands {
     }
     child.stdin.on("error", fail);
     child.once("exit", (code, signal) => {
+      if (restricted) return;
       if (code === null && signal === null) { fail(new Error("native command exit unavailable")); return; }
       owned.root = Object.freeze({ exitCode: code, signal }); exited.resolve(owned.root);
     });
     child.once("close", (code, signal) => {
       if (!child.pid || owned.retained) return;
-      if (!owned.root || owned.root.exitCode !== code || owned.root.signal !== signal || !child.stdout.readableEnded || !child.stderr.readableEnded) {
+      if (restricted && !restricted.close(code, signal)) return;
+      if (!owned.root || (!restricted && (owned.root.exitCode !== code || owned.root.signal !== signal)) || !child.stdout.readableEnded || !child.stderr.readableEnded) {
         fail(new Error("native command close lacks root exit or complete output EOF")); return;
       }
       owned.closed = true; complete();

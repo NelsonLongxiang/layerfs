@@ -43,7 +43,8 @@ NTSTATUS copy_security(CallbackState &state, PSECURITY_DESCRIPTOR target,
   }
   return STATUS_SUCCESS;
 }
-static DWORD owner_security(PSECURITY_DESCRIPTOR *security) {
+static DWORD owner_security(PSECURITY_DESCRIPTOR *security,
+                            PCWSTR restricted_sid) {
   HANDLE token = nullptr;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
     return GetLastError();
@@ -59,12 +60,29 @@ static DWORD owner_security(PSECURITY_DESCRIPTOR *security) {
   PWSTR sid = nullptr;
   if (!error && !ConvertSidToStringSidW(data->User.Sid, &sid))
     error = GetLastError();
-  WCHAR sddl[256]{};
   if (!error) {
-    if (swprintf_s(sddl, L"O:%sG:%sD:P(A;;FA;;;%s)", sid, sid, sid) < 0)
-      error = ERROR_INSUFFICIENT_BUFFER;
-    else if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                 sddl, SDDL_REVISION_1, security, nullptr))
+    PSID admitted = nullptr;
+    if (restricted_sid &&
+        (wcsncmp(restricted_sid, L"S-1-5-21-", 9) ||
+         !ConvertStringSidToSidW(restricted_sid, &admitted) ||
+         !IsValidSid(admitted) || *GetSidSubAuthorityCount(admitted) != 5 ||
+         EqualSid(admitted, data->User.Sid))) {
+      if (admitted)
+        LocalFree(admitted);
+      LocalFree(sid);
+      LocalFree(data);
+      return ERROR_INVALID_SID;
+    }
+    if (admitted)
+      LocalFree(admitted);
+    std::wstring grant = restricted_sid
+                             ? std::wstring(L"(A;;0x1301bf;;;") +
+                                   restricted_sid + L")S:(ML;;NW;;;LW)"
+                             : L"";
+    std::wstring sddl = L"O:" + std::wstring(sid) + L"G:" + sid +
+                        L"D:P(A;;FA;;;" + sid + L")" + grant;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.c_str(), SDDL_REVISION_1, security, nullptr))
       error = GetLastError();
   }
   if (sid)
@@ -80,7 +98,8 @@ CallbackState::~CallbackState() {
 WorkspaceCallbacks::WorkspaceCallbacks(const WorkspacePort &port,
                                        std::shared_ptr<void> provider,
                                        WorkspaceVolume volume,
-                                       CallbackObserver observer)
+                                       CallbackObserver observer,
+                                       PCWSTR restricted_sid)
     : state_(std::make_shared<CallbackState>()) {
   auto &s = *state_;
   s.port = port;
@@ -95,7 +114,7 @@ WorkspaceCallbacks::WorkspaceCallbacks(const WorkspacePort &port,
       s.volume.label.size() >
           sizeof(FSP_FSCTL_VOLUME_INFO::VolumeLabel) / sizeof(WCHAR))
     return;
-  s.win32 = owner_security(&s.security);
+  s.win32 = owner_security(&s.security, restricted_sid);
   if (s.win32) {
     s.status = STATUS_UNSUCCESSFUL;
     return;

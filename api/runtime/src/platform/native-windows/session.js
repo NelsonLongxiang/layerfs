@@ -43,7 +43,7 @@ export class NativeSession {
   #stderrTruncated = false;
   constructor(options, released) {
     this.#options = options; this.#released = released;
-    this.#commands = new NativeCommands(options.path, () => this.#releaseClosed());
+    this.#commands = new NativeCommands(options.path, () => this.#releaseClosed(), options.restricted);
   }
   #releaseClosed() {
     if (this.#state === "closed" && this.#commands.idle) this.#released();
@@ -51,11 +51,11 @@ export class NativeSession {
   get path() { return this.#options.path; }
   get work() { return this.#options.work; }
   observation() {
-    return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), ...this.#commands.observation(), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
+    return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), ...this.#commands.observation(), restricted: Boolean(this.#options.restricted), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
   }
   async start() {
     const o = this.#options;
-    try { this.#child = spawn(o.executable, [o.host, o.winfsp, o.store, o.work, o.path], { stdio: ["pipe", "pipe", "pipe"], shell: false, windowsHide: true }); }
+    try { this.#child = spawn(o.executable, [o.host, o.winfsp, o.store, o.work, o.path, ...(o.restricted ? [o.restricted.sid] : [])], { stdio: ["pipe", "pipe", "pipe"], shell: false, windowsHide: true }); }
     catch (cause) { this.#notStarted(cause); return this.#ready.promise; }
     const child = this.#child;
     child.stdout.on("data", (chunk) => this.#data(chunk));

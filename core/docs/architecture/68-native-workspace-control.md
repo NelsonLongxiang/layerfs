@@ -4,6 +4,33 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Restricted Windows command backend access (2026-11-02)
+
+The explicit native Session may opt into a product restrictedLauncher. A fresh
+per-Session policy SID is shared only as identity (not a secret) with the native
+mount security descriptor and the
+[restricted process owner](../../../engine/crates/layerfs-sandbox/src/windows/restricted.cpp).
+Its [token/desktop setup](../../../engine/crates/layerfs-sandbox/src/windows/restricted.hpp)
+uses Windows restricted access checks, deny-only administrator membership, low
+integrity and a random private desktop. It grants child-only self-token/default
+object access needed for ordinary applications, without widening parent or
+backend files. The selected mount grants data rights to the restricting SID;
+Store/Overlay/project credentials remain owner-private.
+
+The [runtime adapter](../../../api/runtime/src/platform/native-windows/restricted.js)
+reads target identity/exit from an inherited pipe excluded from the target's
+handle list. Standard streams carry data only; explicit cancellation on another
+inherited pipe targets the original process handle once. A before-effect failure
+needs the original acknowledgement and launcher exit; unknown lifecycle retains
+original bytes/cause/process without plain-token fallback or replay. The existing
+command owner continues to account separately for root exit and complete streams.
+
+Actual access evidence establishes mount writes plus private-file read/ACL and
+parent-memory refusal for this implementation, not full Sandbox confinement or
+SDK registration. Publicly-readable host objects, networking, quotas, process-tree
+control and general registry isolation are outside this local boundary. See the
+[runtime contract](../../../api/docs/runtime.md#restricted-command-access-boundary-explicit-opt-in).
+
 ## Native host execution and filesystem ownership (2026-11-02)
 
 The explicit JavaScript native Session delegates trusted ordinary Windows

@@ -179,6 +179,51 @@ count is not a descendant inventory or kernel-drain proof.
 
 See the [native execution proof](../../core/docs/issues/352/WINDOWS-NATIVE-EXEC-2026-11-02.md).
 
+### Restricted command access boundary (explicit opt-in)
+
+Pass an absolute product restrictedLauncher executable to runtime.native.open to
+select restricted commands for that Session. Existing trusted same-user mode is
+unchanged when it is omitted. The Session generates a fresh restricting SID,
+passes it to the product native mount owner, and uses it for every command in
+that Session. This is not an SDK Sandbox registration or a promise of full host
+isolation.
+
+The product launcher creates a restricted token with maximum privileges disabled
+(except Windows' traversal privilege), the Administrators SID deny-only, an
+additional restricting SID check and low integrity. It creates a random private
+desktop, prepares child-only token/default-object ACLs, and starts the command
+with an explicit standard-handle inheritance list. No original process token,
+backend file, runtime control or lifecycle receipt handle is given to the
+command. There is no global account, driver, user profile or service change.
+
+Only the selected mount's data access is granted to this policy SID, with a low
+integrity label so commands can write there. Owner-only Store, Overlay and SDK
+project authority files are not granted to it. Real native access checks cover
+both reading and WRITE_DAC/WRITE_OWNER attempts plus process-memory access to the
+runtime, native product parent and unrestricted launcher. This does not deny all
+host resources: system and other publicly-readable objects can remain readable,
+and there is no network, registry, process-tree, quota or general host isolation
+claim. Do not represent this local boundary as complete support for untrusted
+code or an isolated SDK Sandbox.
+
+The launcher reports its original target PID and raw Windows DWORD exit code on
+a private inherited receipt pipe, separate from command stdout/stderr. A command
+cannot fake completion by printing a receipt line. The command handle/finished
+receipt add restricted: true, exited preserves exitCode and signal: null. An
+explicit root cancel goes once through a separate inherited control pipe and
+uses TerminateProcess on the original target handle (cancellation code 1223).
+There is no PID rediscovery, process-tree kill or filesystem supervision. A
+cancel request is not proof of termination; the original exit and owner close
+receipts decide. No plain-token launch, reconnect or resend follows a restricted
+startup failure. A before-process failure becomes Failed only with the original
+launcher acknowledgement and exit; missing or malformed observations retain
+Unknown. The runtime still owns streams and waits for their EOF independently.
+
+The standalone build entry is tools/build-restricted-windows.ps1, with locked
+native build inputs explicit; the helper is part of the product Sandbox engine,
+not a diagnostic executable or Rust unsafe exemption. The current proof is in
+[the restricted-access report](../../core/docs/issues/352/WINDOWS-RESTRICTED-EXEC-2026-11-02.md).
+
 ### Open an installed runtime project without exporting authority
 
 For a project initialized by this runtime, use the same operation with project
