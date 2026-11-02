@@ -53,7 +53,8 @@ With `native: true` on Windows, `runtime.native` is an explicit host-owned
 filesystem process API. It is **not** the agent SDK Sandbox/Workspace family:
 `workspace.mount(sandbox, branch)` still names an already-running Sandbox and
 remains unsupported on the Windows-native SDK route. This API does not register
-one, choose an image, launch commands, or start a WSL/Linux worker.
+one, choose a container image, or start a WSL/Linux worker. Explicit native
+Sessions can launch ordinary commands as described below.
 
 ```js
 const runtime = await LayerFSRuntime.open({ home, native: true, sweep: false });
@@ -124,6 +125,77 @@ The public native API has direct WinFsp functional evidence in the
 It does not qualify complete SDK Ready, arbitrary mappings/kernel references,
 crash recovery or public endpoint authentication. Store calls remain in-process
 on the native route; no Store worker is introduced.
+
+### Resident native execution instances
+
+runtime.native.create(options) starts one real Windows resident process owning a
+restricted primary token and random private desktop before any mount is admitted.
+It takes project, executable, host, winfsp, restrictedLauncher, a fresh absolute
+work path, and optional readyTimeoutMs (default 15000; range 1–120000). The project
+must already have this runtime's installed record; it fixes the Store selected at
+creation. No Store is created/imported or mounted by create. No image, container,
+WSL worker, automatic placement or machine-wide discovery is implied.
+
+The returned immutable instance has id, project, mode: "windows-restricted", and
+status(), mount(branch), close(). mount accepts one existing non-main Branch name.
+It uses only the original running instance, creates fresh numbered work/mount paths
+beneath the instance's work root, and returns the existing native Session handle.
+It does not start or replace an instance. Two Sessions can coexist and use the same
+original token and private desktop. runtime.native.open remains available for an
+explicit standalone Session; overlapping instance paths are reserved and refuse
+Busy instead of creating a competing owner.
+
+runtime.native.instances() returns process-local observations with id, project,
+work, mode, state, pid and sessions. Starting, running, closing and retained are
+observed states, not a complete kernel/service Ready guarantee. status checks the
+original resident control and returns its current local ownership observation;
+it never settles a prior unknown result. New instance mounts and commands refuse
+after loss or terminal admission. There is no automatic restart, idle close,
+reattachment or fallback to a newly created token.
+
+The resident process itself creates target commands with its original restricted
+token. A command owner establishes bounded private anonymous request/response
+streams and transfers only its three standard data handles, explicit argv/env/cwd
+and original process incarnation. Windows PID plus creation time is checked before
+any cross-process handle duplication. The runtime forwards the one prepared-handle
+selection to the original resident control; no public listener is introduced.
+Successful target creation transfers the original target process handle back to
+that command owner, which still owns exit, stream completion and explicit root
+cancellation. JavaScript receives neither the token handle nor desktop authority.
+No target gets runtime control, instance receipt or backend handles. This is a
+same-build Windows-x64 private protocol, not a portable or authenticated remote ABI.
+
+Two original outcomes are needed before exec reports a started target: resident
+handoff acknowledgement and the target owner's start evidence. Their delivery can
+arrive in either order. Contradictory creation outcomes, partial transfer or lost
+receipts retain Unknown and original custody without resend. A definite creation
+refusal has its own original acknowledgement; the still-running instance is not
+replaced. Actual process completion and stream EOF remain independent.
+
+close refuses MountsActive while an original Session, mount attempt or command
+completion remains owned; an uncertain Session returns Unknown. It never unmounts
+or kills commands to succeed. An outstanding control call returns Busy. After
+explicit unmounts, close releases and checks the original token/desktop handles,
+then requires the correlated close receipt and original resident exit0 before it
+resolves. A repeat on that closed handle returns the recorded result, not a second
+stop attempt. A failed handle-close is not attempted again by the destructor.
+The work directory is retained; global project history is not deleted. Root exit,
+command count or successful token-handle release do not enumerate all descendant
+or kernel/mapping references.
+
+runtime.close refuses an active instance before closing project clients. A caller
+must explicitly unmount Sessions and close the original instance. Losing a caller
+or reaching a readiness deadline does not authorize a kill/restart or a normal-close
+claim. Original malformed reply bytes, pending requests, causes and a bounded stderr
+tail remain held process-locally; this is not crash recovery.
+
+The agent SDK's current Sandbox contract selects a container image and owns an
+acknowledged container. The native mode selects this restricted Windows context,
+not an OCI image or equivalent host confinement. Therefore sandbox.create and
+workspace.mount/exec on the native SDK table remain Unsupported: exposing this
+mode there requires an explicit platform contract rather than silently accepting
+and ignoring image. See the
+[resident-instance implementation proof](../../core/docs/issues/352/WINDOWS-NATIVE-INSTANCE-2026-11-02.md).
 
 ### Trusted host commands in a native mount
 

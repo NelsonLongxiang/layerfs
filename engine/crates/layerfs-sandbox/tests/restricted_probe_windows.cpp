@@ -69,6 +69,16 @@ int wmain(int argc, wchar_t **argv) {
     CloseHandle(parent_token);
   if (limited)
     CloseHandle(limited);
+  WCHAR desktop_name[256];
+  DWORD desktop_size = sizeof desktop_name;
+  if (!GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()),
+                                 UOI_NAME, desktop_name, sizeof desktop_name,
+                                 &desktop_size))
+    return 2;
+  printf("DESKTOP ");
+  for (auto p = desktop_name; *p; ++p)
+    putchar(static_cast<char>(*p));
+  putchar('\n');
   for (int i = 1; i < argc; ++i) {
     if (!wcscmp(argv[i], L"--process") && i + 1 < argc) {
       auto pid = wcstoul(argv[++i], nullptr, 10);

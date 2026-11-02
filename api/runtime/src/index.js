@@ -23,6 +23,7 @@ import macos from "./platform/macos/index.js";
 import windows from "./platform/windows/index.js";
 import nativeWindows from "./platform/native-windows/index.js";
 import { NativeSessions } from "./platform/native-windows/sessions.js";
+import { NativeInstances } from "./platform/native-windows/instances.js";
 import { list } from "./project/list.js";
 import { InitJobs } from "./project/jobs.js";
 import { prepare, runInit } from "./project/init.js";
@@ -41,6 +42,7 @@ const FACTORY = Symbol("LayerFSRuntime.open");
 
 export class LayerFSRuntime {
   #nativeSessions;
+  #nativeInstances;
   /** A runtime on the LayerFS home `settings.home` (settings.js lists the rest). Opens nothing else; with
    * `sweep` (the default) it then runs one runtime.sandbox.sweep in the background, reported by status().sweep. */
   static async open(settings = {}) {
@@ -61,6 +63,7 @@ export class LayerFSRuntime {
     if (endpoint) useWorker(endpoint);
     this.clients = new Clients(this);
     this.#nativeSessions = new NativeSessions(this);
+    this.#nativeInstances = new NativeInstances(this, this.#nativeSessions);
     const jobs = new InitJobs((prepared, report) => runInit(this, prepared, report));
     const live = (method) => async (...args) => {
       if (this.closed) throw new LayerFSError("InvalidInput", "this LayerFS runtime is closed; open another with LayerFSRuntime.open", null);
@@ -74,6 +77,8 @@ export class LayerFSRuntime {
       return found;
     };
     this.native = {
+      create: live((options) => this.#nativeInstances.create(options)),
+      instances: live(() => this.#nativeInstances.list()),
       open: live((options) => this.#nativeSessions.open(options)),
       list: live(() => this.#nativeSessions.list()),
     };
@@ -125,8 +130,10 @@ export class LayerFSRuntime {
 
   async close() {
     if (this.closed) return;
+    this.#nativeInstances.assertIdle();
     this.#nativeSessions.assertIdle();
     await this.sweeping;
+    this.#nativeInstances.assertIdle();
     this.#nativeSessions.assertIdle();
     this.closed = true;
     await this.clients.closeAll();

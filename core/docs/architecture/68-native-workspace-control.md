@@ -4,6 +4,36 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Resident Windows native execution instance (2026-11-02)
+
+runtime.native.create now admits a real acknowledged resident process, original
+restricted token and private desktop before a mount. Its
+[instance owner](../../../engine/crates/layerfs-sandbox/src/windows/instance.cpp)
+checks strictly increasing canonical control ids and exact command fields; EOF or
+malformed input is failure, never acknowledged close. Normal close checks original
+handle release before its correlated receipt and process exit. Work is private and
+fresh; it is not a container rootfs, SDK Sandbox image or general host confinement.
+
+The [launch handoff](../../../engine/crates/layerfs-sandbox/src/windows/launch.cpp)
+creates target commands in that original token owner: sibling-process token reuse
+was refused by Windows privilege checks and is not bypassed by adding privilege or
+recreating the token. The command owner establishes private anonymous handoff
+streams, duplicates data stdio handles only and identifies each original process by
+PID plus creation time. The resident creates once, transfers the target process
+handle and returns its exact handoff acknowledgement. Original wait/exit/explicit
+root cancellation stay with the command owner; the filesystem process supervises
+no commands. Unknown transfer custody is neither replayed nor guessed released.
+
+The [runtime instance](../../../api/runtime/src/platform/native-windows/instance.js)
+and [manager](../../../api/runtime/src/platform/native-windows/instances.js) claim
+work before awaiting and reserve it against standalone Sessions. Mounts require the
+same still-running instance and fixed project Store, never autostart. Active mounts,
+command owners and original pending calls block normal close without forced cleanup.
+Status, handoff and close correlate original control ids; token handles do not reach
+JavaScript. The public native mode remains separate from the SDK container-image
+Sandbox contract; its native dispatch refusal is unchanged. See the
+[runtime contract](../../../api/docs/runtime.md#resident-native-execution-instances).
+
 ## Restricted Windows command backend access (2026-11-02)
 
 The explicit native Session may opt into a product restrictedLauncher. A fresh

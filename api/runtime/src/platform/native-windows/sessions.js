@@ -11,7 +11,7 @@ function within(parent, child) {
   const tail = relative(parent, child);
   return tail === "" || (!isAbsolute(tail) && tail !== ".." && !tail.startsWith(".." + sep));
 }
-function checkedPath(value, label, existing) {
+export function checkedPath(value, label, existing) {
   if (typeof value !== "string" || value.includes("\0") || !isAbsolute(value) || !/^[a-z]:[\\/]/i.test(value)) throw invalid(label + " must be an absolute local drive path");
   const full = resolve(value);
   if (existing) {
@@ -70,12 +70,27 @@ function checked(options, runtime) {
 export class NativeSessions {
   #runtime;
   #held = new Map();
+  #roots = new Map();
   constructor(runtime) { this.#runtime = runtime; }
-  async open(options) {
+  claimInstance(id, work) {
+    const roots = [...this.#roots.values(), ...this.list().flatMap((s) => [s.path, s.work])];
+    if (roots.some((p) => within(p, work) || within(work, p))) throw new LayerFSError("Busy", "an original native owner holds this instance work path", null);
+    this.#roots.set(id, work);
+  }
+  releaseInstance(id) { this.#roots.delete(id); }
+  async open(options, context = null) {
     if (!this.#runtime.settings.native || process.platform !== "win32") throw new LayerFSError("Unsupported", "explicit native Sessions require the Windows-native runtime; SDK Sandbox and Workspace routes are unchanged", null);
     let input;
     try { input = checked(options, this.#runtime); }
     catch (error) { if (error instanceof LayerFSError) throw error; throw invalid("native input paths could not be checked"); }
+    if (context) {
+      if (input.store !== context.store) { input.frame.fill(0); throw new LayerFSError("InvalidInput", "the registered Store selection changed after this native instance was created", null); }
+      input.restricted = context.policy;
+      input.instance = context.id;
+    }
+    if ([...this.#roots].some(([id, root]) => id !== context?.id && [input.path, input.work].some((p) => within(root, p) || within(p, root)))) {
+      input.frame.fill(0); throw new LayerFSError("Busy", "an original native instance owns this path; use its mount method", null);
+    }
     // Claim before awaiting, including before any work/mount path is made.
     if ([...this.#held.values()].some((s) => [s.path, s.work].some((p) => within(p, input.path) || within(input.path, p) || within(p, input.work) || within(input.work, p)))) {
       input.frame.fill(0); throw new LayerFSError("Busy", "this runtime owns an overlapping native Session path", null);

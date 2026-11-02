@@ -51,7 +51,7 @@ export class NativeSession {
   get path() { return this.#options.path; }
   get work() { return this.#options.work; }
   observation() {
-    return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), ...this.#commands.observation(), restricted: Boolean(this.#options.restricted), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
+    return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.instance ? { instance: this.#options.instance } : {}), ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), ...this.#commands.observation(), restricted: Boolean(this.#options.restricted), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
   }
   async start() {
     const o = this.#options;

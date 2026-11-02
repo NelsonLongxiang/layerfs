@@ -54,6 +54,7 @@ export class NativeCommands {
   get idle() { return this.#held.size === 0; }
   async start(executable, args, options = {}) {
     const input = inputs(executable, args, options);
+    this.#policy?.admit?.();
     const id = randomUUID(), opened = deferred(), exited = deferred(), finished = deferred();
     const output = [new PassThrough({ highWaterMark: 65536 }), new PassThrough({ highWaterMark: 65536 })];
     const owned = { id, input, opened, exited, finished, output, child: null, retained: false, root: null, closed: false, completed: false, cancelRequested: false, failure: null };
@@ -119,9 +120,9 @@ export class NativeCommands {
       if (code === null && signal === null) { fail(new Error("native command exit unavailable")); return; }
       owned.root = Object.freeze({ exitCode: code, signal }); exited.resolve(owned.root);
     });
-    child.once("close", (code, signal) => {
+    child.once("close", async (code, signal) => {
       if (!child.pid || owned.retained) return;
-      if (restricted && !restricted.close(code, signal)) return;
+      if (restricted && !(await restricted.close(code, signal))) return;
       if (!owned.root || (!restricted && (owned.root.exitCode !== code || owned.root.signal !== signal)) || !child.stdout.readableEnded || !child.stderr.readableEnded) {
         fail(new Error("native command close lacks root exit or complete output EOF")); return;
       }

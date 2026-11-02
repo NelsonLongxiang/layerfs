@@ -15,7 +15,34 @@ struct RestrictedIdentity {
   HDESK desktop = nullptr;
   PSID policy = nullptr;
   std::wstring desktop_name;
+  bool retained_close = false;
+  DWORD close_owned() {
+    if (desktop) {
+      if (!CloseDesktop(desktop)) {
+        retained_close = true;
+        return GetLastError();
+      }
+      desktop = nullptr;
+    }
+    if (token) {
+      if (!CloseHandle(token)) {
+        retained_close = true;
+        return GetLastError();
+      }
+      token = nullptr;
+    }
+    if (original) {
+      if (!CloseHandle(original)) {
+        retained_close = true;
+        return GetLastError();
+      }
+      original = nullptr;
+    }
+    return ERROR_SUCCESS;
+  }
   ~RestrictedIdentity() {
+    if (retained_close)
+      return; // No second close attempt after original failure.
     if (desktop)
       CloseDesktop(desktop);
     if (security)
