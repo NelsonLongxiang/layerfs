@@ -405,8 +405,13 @@ backend file, runtime control or lifecycle receipt handle is given to the
 command. There is no global account, driver, user profile or service change.
 
 Only the selected mount's data access is granted to this policy SID, with a low
-integrity label so commands can write there. Owner-only Store, Overlay and SDK
-project authority files are not granted to it. Real native access checks cover
+integrity label so commands can write there. A directory mount also creates an
+NTFS junction, separate from its mounted root. The new junction receives an
+explicit protected owner/policy descriptor through FspFileSystemSetMountPointEx:
+policy read/traverse only (0x1200a9), low label, no inheritable grant or write/ACL
+control on the junction. Its private parent is not granted access. Without a
+policy, the original inherited junction behavior remains unchanged. Owner-only
+Store, Overlay and SDK project authority files are not granted to it. Real native access checks cover
 both reading and WRITE_DAC/WRITE_OWNER attempts plus process-memory access to the
 runtime, native product parent and unrestricted launcher. This does not deny all
 host resources: system and other publicly-readable objects can remain readable,

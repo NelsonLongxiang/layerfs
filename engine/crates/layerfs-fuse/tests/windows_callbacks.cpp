@@ -4,11 +4,39 @@
 #include "mount.hpp"
 #include <cstdio>
 #include <memory>
+#include <sddl.h>
 #include <string>
 static bool check(bool ok, const char *why) {
   if (!ok)
     fprintf(stderr, "CALLBACK_ADAPTER_TEST_FAIL %s\n", why);
   return ok;
+}
+// The junction itself is read/traverse-only for the one policy SID. The
+// independent mounted-volume descriptor retains its existing data permissions.
+static bool junction_policy(PSECURITY_DESCRIPTOR security) {
+  if (!security || !IsValidSecurityDescriptor(security))
+    return false;
+  SECURITY_DESCRIPTOR_CONTROL control = 0;
+  DWORD revision = 0;
+  PACL dacl = nullptr;
+  BOOL present = FALSE, defaulted = FALSE;
+  if (!GetSecurityDescriptorControl(security, &control, &revision) ||
+      !(control & SE_DACL_PROTECTED) ||
+      !GetSecurityDescriptorDacl(security, &present, &dacl, &defaulted) ||
+      !present || !dacl || dacl->AceCount != 2)
+    return false;
+  PVOID raw = nullptr;
+  if (!GetAce(dacl, 1, &raw))
+    return false;
+  auto ace = static_cast<ACCESS_ALLOWED_ACE *>(raw);
+  PSID policy = nullptr;
+  if (!ConvertStringSidToSidW(L"S-1-5-21-1-2-3-4", &policy))
+    return false;
+  bool correct = ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE &&
+                 ace->Header.AceFlags == 0 && ace->Mask == 0x1200a9 &&
+                 EqualSid(policy, &ace->SidStart);
+  LocalFree(policy);
+  return correct;
 }
 int wmain(int argc, wchar_t **argv) {
   if (argc != 3)
@@ -81,8 +109,8 @@ int wmain(int argc, wchar_t **argv) {
     layerfs::WorkspaceCallbacks b(port, provider, {1024, 512, L"LayerFS"});
     const auto &t = a.table();
     if (!check(a.status() == STATUS_SUCCESS && b.status() == STATUS_SUCCESS &&
-                   a.win32_error() == 0 && a.context() && b.context() &&
-                   a.context() != b.context() &&
+                   a.win32_error() == 0 && !a.mount_security() && a.context() &&
+                   b.context() && a.context() != b.context() &&
                    a.callback_failure() == STATUS_SUCCESS && t.GetVolumeInfo &&
                    t.GetSecurityByName && t.Create && t.Open && t.Overwrite &&
                    t.Cleanup && t.Close && t.Read && t.Write && t.Flush &&
@@ -112,7 +140,9 @@ int wmain(int argc, wchar_t **argv) {
                    bad_label.status() == STATUS_INVALID_PARAMETER &&
                    bad_policy.status() < 0 &&
                    bad_policy.win32_error() == ERROR_INVALID_SID &&
-                   !bad_policy.context() && admitted.status() == STATUS_SUCCESS,
+                   !bad_policy.context() && !bad_policy.mount_security() &&
+                   admitted.status() == STATUS_SUCCESS &&
+                   junction_policy(admitted.mount_security()),
                "incomplete port/provider/volume refuses before native effects"))
       return 1;
   }

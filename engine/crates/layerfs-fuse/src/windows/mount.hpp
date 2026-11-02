@@ -39,7 +39,8 @@ public:
   NTSTATUS attach(PCWSTR library, PCWSTR directory,
                   const FSP_FSCTL_VOLUME_PARAMS &params,
                   const FSP_FILE_SYSTEM_INTERFACE &callbacks,
-                  UINT64 root_serial, std::shared_ptr<void> context = {});
+                  UINT64 root_serial, std::shared_ptr<void> context = {},
+                  PSECURITY_DESCRIPTOR mount_security = nullptr);
   // Context is stored in the retained native State, not the C++ owner address.
   static void *callback_context(FSP_FILE_SYSTEM *);
   static BOOLEAN add_dir_info(FSP_FILE_SYSTEM *, FSP_FSCTL_DIR_INFO *, PVOID,

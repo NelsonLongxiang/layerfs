@@ -44,6 +44,7 @@ NTSTATUS copy_security(CallbackState &state, PSECURITY_DESCRIPTOR target,
   return STATUS_SUCCESS;
 }
 static DWORD owner_security(PSECURITY_DESCRIPTOR *security,
+                            PSECURITY_DESCRIPTOR *mount_security,
                             PCWSTR restricted_sid) {
   HANDLE token = nullptr;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
@@ -84,6 +85,16 @@ static DWORD owner_security(PSECURITY_DESCRIPTOR *security,
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
             sddl.c_str(), SDDL_REVISION_1, security, nullptr))
       error = GetLastError();
+    if (!error && restricted_sid) {
+      // The NTFS junction is distinct from the mounted volume. Grant only
+      // read/traverse on this fresh object, never its private parent/backing.
+      std::wstring junction = L"O:" + std::wstring(sid) + L"G:" + sid +
+                              L"D:P(A;;FA;;;" + sid + L")(A;;0x1200a9;;;" +
+                              restricted_sid + L")S:(ML;;NW;;;LW)";
+      if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+              junction.c_str(), SDDL_REVISION_1, mount_security, nullptr))
+        error = GetLastError();
+    }
   }
   if (sid)
     LocalFree(sid);
@@ -94,6 +105,8 @@ static DWORD owner_security(PSECURITY_DESCRIPTOR *security,
 CallbackState::~CallbackState() {
   if (security)
     LocalFree(security);
+  if (mount_security)
+    LocalFree(mount_security);
 }
 WorkspaceCallbacks::WorkspaceCallbacks(const WorkspacePort &port,
                                        std::shared_ptr<void> provider,
@@ -114,7 +127,7 @@ WorkspaceCallbacks::WorkspaceCallbacks(const WorkspacePort &port,
       s.volume.label.size() >
           sizeof(FSP_FSCTL_VOLUME_INFO::VolumeLabel) / sizeof(WCHAR))
     return;
-  s.win32 = owner_security(&s.security, restricted_sid);
+  s.win32 = owner_security(&s.security, &s.mount_security, restricted_sid);
   if (s.win32) {
     s.status = STATUS_UNSUCCESSFUL;
     return;
@@ -124,6 +137,9 @@ WorkspaceCallbacks::WorkspaceCallbacks(const WorkspacePort &port,
 }
 NTSTATUS WorkspaceCallbacks::status() const { return state_->status; }
 DWORD WorkspaceCallbacks::win32_error() const { return state_->win32; }
+PSECURITY_DESCRIPTOR WorkspaceCallbacks::mount_security() const {
+  return state_->status >= 0 ? state_->mount_security : nullptr;
+}
 NTSTATUS WorkspaceCallbacks::try_stop_callbacks() {
   auto &s = *state_;
   std::lock_guard<std::mutex> lock(s.admission);

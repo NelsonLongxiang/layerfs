@@ -20,7 +20,7 @@ struct WinFspMount::State {
   FSP_FSCTL_VOLUME_PARAMS params{};
   decltype(&FspFileSystemCreate) create = nullptr;
   decltype(&FspFileSystemDelete) destroy = nullptr;
-  decltype(&FspFileSystemSetMountPoint) mount = nullptr;
+  decltype(&FspFileSystemSetMountPointEx) mount = nullptr;
   decltype(&FspFileSystemRemoveMountPoint) unmount = nullptr;
   decltype(&FspFileSystemStartDispatcher) start = nullptr;
   decltype(&FspFileSystemStopDispatcher) stop = nullptr;
@@ -61,8 +61,8 @@ static bool absolute(PCWSTR path) {
 NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
                              const FSP_FSCTL_VOLUME_PARAMS &params,
                              const FSP_FILE_SYSTEM_INTERFACE &callbacks,
-                             UINT64 root_serial,
-                             std::shared_ptr<void> context) {
+                             UINT64 root_serial, std::shared_ptr<void> context,
+                             PSECURITY_DESCRIPTOR mount_security) {
   auto &s = *state_;
   if (s.attempted)
     return STATUS_INVALID_DEVICE_STATE;
@@ -92,7 +92,7 @@ NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
   return fail(#symbol, STATUS_PROCEDURE_NOT_FOUND, GetLastError())
   LFS_LOAD(create, FspFileSystemCreate);
   LFS_LOAD(destroy, FspFileSystemDelete);
-  LFS_LOAD(mount, FspFileSystemSetMountPoint);
+  LFS_LOAD(mount, FspFileSystemSetMountPointEx);
   LFS_LOAD(unmount, FspFileSystemRemoveMountPoint);
   LFS_LOAD(start, FspFileSystemStartDispatcher);
   LFS_LOAD(stop, FspFileSystemStopDispatcher);
@@ -105,7 +105,7 @@ NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
     return fail("create", status);
   s.filesystem->UserContext = &s;
   s.phase = MountPhase::Created;
-  status = s.mount(s.filesystem, s.directory.data());
+  status = s.mount(s.filesystem, s.directory.data(), mount_security);
   if (status < 0)
     return fail("mount", status);
   s.phase = MountPhase::Mounted;

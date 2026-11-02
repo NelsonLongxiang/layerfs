@@ -86,6 +86,13 @@ integrity and a random private desktop. It grants child-only self-token/default
 object access needed for ordinary applications, without widening parent or
 backend files. The selected mount grants data rights to the restricting SID;
 Store/Overlay/project credentials remain owner-private.
+The native directory junction is a distinct NTFS access boundary: the host passes
+a protected owner/policy read-traverse descriptor to FspFileSystemSetMountPointEx
+only when creating the fresh mountpoint. It does not grant the private parent or
+backend files, inherit that grant to siblings, or change the mounted-volume data
+rights. Callback context keeps both descriptors alive through mount ownership.
+This permits absolute cwd metadata and ordinary child creation on the selected
+mount without broadening token privileges or exposing private runtime paths.
 
 The [runtime adapter](../../../api/runtime/src/platform/native-windows/restricted.js)
 reads target identity/exit from an inherited pipe excluded from the target's

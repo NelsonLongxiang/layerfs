@@ -12,6 +12,7 @@ struct CallbackState {
   CallbackObserver observer = nullptr;
   FSP_FILE_SYSTEM_INTERFACE callbacks{};
   PSECURITY_DESCRIPTOR security = nullptr;
+  PSECURITY_DESCRIPTOR mount_security = nullptr;
   NTSTATUS status = STATUS_INVALID_PARAMETER;
   DWORD win32 = 0;
   std::atomic<NTSTATUS> failure{STATUS_SUCCESS};

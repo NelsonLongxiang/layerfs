@@ -51,7 +51,7 @@ int wmain(int argc, wchar_t **argv) {
   wcscpy_s(params.FileSystemName, L"LayerFS");
   layerfs::WinFspMount mount;
   auto result = mount.attach(argv[1], argv[2], params, adapter.table(), root,
-                             adapter.context());
+                             adapter.context(), adapter.mount_security());
   if (result < 0) {
     channel->event(104, status_body(result));
     return 1;

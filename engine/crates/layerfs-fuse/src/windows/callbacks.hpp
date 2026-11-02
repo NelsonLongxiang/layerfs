@@ -40,6 +40,8 @@ public:
                      PCWSTR restricted_sid = nullptr);
   NTSTATUS status() const;
   DWORD win32_error() const;
+  // Borrowed for fresh mountpoint creation only; retained by context().
+  PSECURITY_DESCRIPTOR mount_security() const;
   NTSTATUS callback_failure() const;
   // Busy is before-effect: it does not change ordinary callback admission.
   NTSTATUS try_stop_callbacks();
