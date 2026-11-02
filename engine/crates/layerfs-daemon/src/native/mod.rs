@@ -1,15 +1,20 @@
 //! Safe process-local Windows Workspace session. OS mounting and ABI remain separate.
 mod binding;
+mod bootstrap;
 mod commit;
+mod control;
 mod coordination;
 mod handles;
 mod lifecycle;
 mod metadata;
 mod names;
 mod operations;
+mod port;
+pub mod process;
 mod session;
 mod startup;
 mod types;
+mod wire;
 pub use binding::Binding;
 pub use commit::{CommitCompletion, CommitReceipt, CommitWork};
 pub use lifecycle::{CloseState, SessionStatus};

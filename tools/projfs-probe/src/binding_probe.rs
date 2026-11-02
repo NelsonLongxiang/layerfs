@@ -34,6 +34,53 @@ pub fn run(mode: &str, path: &Path) -> Result<(), String> {
         binding.cursor,
     )
     .map_err(|e| e.to_string())?;
+    if mode == "service-verify" {
+        let page = handles
+            .history
+            .commit_history(&CommitHistoryRequest {
+                branch: binding.branch,
+                start: None,
+                cursor: None,
+                limit: 10,
+            })
+            .map_err(|e| e.to_string())?;
+        if page.records.len() != 1 || page.continuation.is_some() {
+            return Err("expected one standalone product Commit".into());
+        }
+        let record = &page.records[0];
+        if record.parent.is_some()
+            || record.meta.via != CommitVia::Workspace
+            || record.meta.branch != Some(binding.branch)
+        {
+            return Err("standalone product publication provenance".into());
+        }
+        let head = handles
+            .history
+            .branch_snapshot(binding.branch)
+            .map_err(|e| e.to_string())?
+            .ok_or("standalone Branch absent")?;
+        if head.branch.head_commit != Some(record.id) || head.effective_root != record.root {
+            return Err("standalone product head differs".into());
+        }
+        let mut saved = Saved::open_commit(path, &binding.catalog, binding.cursor, record.id)?;
+        let expected = b"published by standalone product\n";
+        if saved.read("native/renamed.txt", 0, expected.len() as u32)? != expected
+            || saved.entry("native/item.txt")?.is_some()
+        {
+            return Err("standalone product namespace bytes differ".into());
+        }
+        let bytes = saved.read("native/window.bin", 0, 300023)?;
+        if bytes.len() != 300023
+            || bytes
+                .iter()
+                .enumerate()
+                .any(|(i, b)| *b != ((i * 29 + 17) % 251) as u8)
+        {
+            return Err("standalone cross-window binary content differs".into());
+        }
+        println!("SERVICE_REOPEN_PASS commits=1 parent=None via=Workspace exact_head=true exact_bytes=true readonly=true binary_bytes=300023");
+        return Ok(());
+    }
     let page = handles
         .history
         .commit_history(&CommitHistoryRequest {

@@ -1,6 +1,6 @@
 #requires -Version 7.0
 # Build native callback diagnostic; pwsh -File tools/winfsp-build.ps1 -VcTools <version-dir> -WindowsSdk <kit-root> -SdkVersion <version> -Out <new-dir>.
-param([Parameter(Mandatory)][string]$VcTools,[Parameter(Mandatory)][string]$WindowsSdk,[Parameter(Mandatory)][string]$SdkVersion,[Parameter(Mandatory)][string]$Out,[switch]$MountOwnerTests,[switch]$CallbackTests,[string]$WinFspRoot=(Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'WinFsp'))
+param([Parameter(Mandatory)][string]$VcTools,[Parameter(Mandatory)][string]$WindowsSdk,[Parameter(Mandatory)][string]$SdkVersion,[Parameter(Mandatory)][string]$Out,[switch]$MountOwnerTests,[switch]$CallbackTests,[switch]$CallbackAdmissionTests,[string]$WinFspRoot=(Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'WinFsp'))
 $ErrorActionPreference='Stop'
 if(Test-Path -LiteralPath $Out){throw 'Use a new build output directory'}
 $cl=Join-Path $VcTools 'bin/Hostx64/x64/cl.exe'
@@ -12,9 +12,10 @@ $metadata=Join-Path $native 'metadata.cpp'
 $header=Join-Path $native 'mount.hpp'
 $nativeSources=@($owner,$adapter,$metadata,$header,(Join-Path $native 'callbacks.hpp'),(Join-Path $native 'callback_state.hpp'),(Join-Path $native 'workspace_port.hpp'))
 $binaryName='winfsp-probe.exe'
-if($MountOwnerTests -and $CallbackTests){throw 'Select one native test binary'}
+if([int][bool]$MountOwnerTests + [int][bool]$CallbackTests + [int][bool]$CallbackAdmissionTests -gt 1){throw 'Select one native test binary'}
 if($MountOwnerTests){$source=Join-Path $native '../../tests/windows_mount.cpp';$binaryName='windows-mount-tests.exe'}
 if($CallbackTests){$source=Join-Path $native '../../tests/windows_callbacks.cpp';$binaryName='windows-callback-tests.exe'}
+if($CallbackAdmissionTests){$source=Join-Path $native '../../tests/windows_callback_admission.cpp';$binaryName='windows-callback-admission.exe'}
 foreach($path in @($cl,$source,$owner,$adapter,$metadata,$header,(Join-Path $WinFspRoot 'inc/winfsp/winfsp.h'))){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Missing input $path"}}
 $dest=(New-Item -ItemType Directory -Path $Out).FullName
 $args=@('/nologo','/std:c++17','/EHsc','/utf-8','/W4','/WX','/MT','/DUNICODE','/D_UNICODE',('/I'+(Join-Path $VcTools 'include')),('/I'+$native),('/external:I'+(Join-Path $WinFspRoot 'inc')),'/external:W0')

@@ -74,9 +74,15 @@ fn main() {
             }
             return;
         }
-        if args.len() == 2 && (args[0] == "binding-setup" || args[0] == "binding-verify") {
+        if args.len() == 2
+            && (args[0] == "binding-setup"
+                || args[0] == "binding-verify"
+                || args[0] == "service-verify")
+        {
             let mode = if args[0] == "binding-setup" {
                 "binding-setup"
+            } else if args[0] == "service-verify" {
+                "service-verify"
             } else {
                 "binding-verify"
             };

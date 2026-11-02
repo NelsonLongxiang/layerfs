@@ -12,6 +12,9 @@ static UINT64 handle(PVOID ctx) {
 }
 static NTSTATUS volume(FSP_FILE_SYSTEM *fs, FSP_FSCTL_VOLUME_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   *info = {};
   info->TotalSize = s.volume.total_bytes;
   info->FreeSize = s.volume.free_bytes;
@@ -23,6 +26,9 @@ static NTSTATUS volume(FSP_FILE_SYSTEM *fs, FSP_FSCTL_VOLUME_INFO *info) {
 static NTSTATUS security_name(FSP_FILE_SYSTEM *fs, PWSTR name, PUINT32 attrs,
                               PSECURITY_DESCRIPTOR sd, SIZE_T *size) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   WorkspaceStat stat{};
   auto status = s.port.stat(name, length(name), &stat);
   if (status < 0)
@@ -37,12 +43,18 @@ static NTSTATUS security_name(FSP_FILE_SYSTEM *fs, PWSTR name, PUINT32 attrs,
 static NTSTATUS get_security(FSP_FILE_SYSTEM *fs, PVOID,
                              PSECURITY_DESCRIPTOR sd, SIZE_T *size) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   return copy_security(s, sd, size);
 }
 static NTSTATUS open_file(FSP_FILE_SYSTEM *fs, PWSTR name, UINT32,
                           UINT32 access, PVOID *ctx,
                           FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   WorkspaceStat stat{};
   UINT64 held = 0;
   auto status = s.port.open(
@@ -67,6 +79,9 @@ static NTSTATUS create_file(FSP_FILE_SYSTEM *fs, PWSTR name, UINT32 options,
                             PSECURITY_DESCRIPTOR, UINT64 allocation, PVOID *ctx,
                             FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   if (allocation)
     return STATUS_NOT_SUPPORTED;
   WorkspaceStat stat{};
@@ -92,6 +107,9 @@ static NTSTATUS overwrite(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT32 attributes,
                           BOOLEAN replace, UINT64 allocation,
                           FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   if (allocation)
     return STATUS_NOT_SUPPORTED;
   WorkspaceStat stat{};
@@ -103,6 +121,13 @@ static NTSTATUS overwrite(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT32 attributes,
 }
 static VOID cleanup(FSP_FILE_SYSTEM *fs, PVOID ctx, PWSTR name, ULONG flags) {
   auto &s = callback_state(fs);
+  // Existing owners must be able to release while a reversible close probe is
+  // awaiting its Busy answer. They remain counted through the entire callback.
+  CallbackAdmission admission(s, true);
+  if (admission.status() < 0) {
+    callback_failed(s, handle(ctx), admission.status());
+    return;
+  }
   observe(s, {CallbackKind::Cleanup, handle(ctx),
               static_cast<FSP_FSCTL_TRANSACT_FULL_CONTEXT *>(ctx)->UserContext,
               0, flags, 0, 0, STATUS_SUCCESS, name});
@@ -121,6 +146,11 @@ static VOID cleanup(FSP_FILE_SYSTEM *fs, PVOID ctx, PWSTR name, ULONG flags) {
 }
 static VOID close_file(FSP_FILE_SYSTEM *fs, PVOID ctx) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s, true);
+  if (admission.status() < 0) {
+    callback_failed(s, handle(ctx), admission.status());
+    return;
+  }
   observe(s, {CallbackKind::CloseBegin, handle(ctx)});
   auto status = s.port.close(handle(ctx));
   if (status < 0) {
@@ -133,6 +163,9 @@ static VOID close_file(FSP_FILE_SYSTEM *fs, PVOID ctx) {
 static NTSTATUS read_file(FSP_FILE_SYSTEM *fs, PVOID ctx, PVOID buffer,
                           UINT64 offset, ULONG size, PULONG count) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   *count = 0;
   if (size > UINT64_MAX - offset)
     return STATUS_INVALID_PARAMETER;
@@ -161,6 +194,9 @@ static NTSTATUS write_file(FSP_FILE_SYSTEM *fs, PVOID ctx, PVOID buffer,
                            BOOLEAN constrained, PULONG count,
                            FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   WorkspaceStat stat{};
   *count = 0;
   auto status = s.port.info(handle(ctx), &stat);
@@ -198,6 +234,9 @@ static NTSTATUS write_file(FSP_FILE_SYSTEM *fs, PVOID ctx, PVOID buffer,
 static NTSTATUS get_info(FSP_FILE_SYSTEM *fs, PVOID ctx,
                          FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   WorkspaceStat stat{};
   auto status = s.port.info(handle(ctx), &stat);
   if (status >= 0)
@@ -211,6 +250,9 @@ static NTSTATUS flush(FSP_FILE_SYSTEM *fs, PVOID ctx,
 static NTSTATUS size_file(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT64 size,
                           BOOLEAN allocation, FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   WorkspaceStat stat{};
   auto status = s.port.info(handle(ctx), &stat);
   if (status < 0)
@@ -226,6 +268,9 @@ static NTSTATUS basic_info(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT32 attributes,
                            UINT64 creation, UINT64 access, UINT64 write,
                            UINT64 change, FSP_FSCTL_FILE_INFO *info) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   WorkspaceStat stat{};
   auto status = s.port.basic_info(handle(ctx), attributes, creation, access,
                                   write, change, &stat);
@@ -236,11 +281,17 @@ static NTSTATUS basic_info(FSP_FILE_SYSTEM *fs, PVOID ctx, UINT32 attributes,
 }
 static NTSTATUS can_delete(FSP_FILE_SYSTEM *fs, PVOID, PWSTR name) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   return s.port.can_delete(name, length(name));
 }
 static NTSTATUS rename_file(FSP_FILE_SYSTEM *fs, PVOID, PWSTR from, PWSTR to,
                             BOOLEAN replace) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   auto status = s.port.rename(from, length(from), to, length(to), replace);
   if (status >= 0)
     observe(s, {CallbackKind::Rename});
@@ -249,6 +300,9 @@ static NTSTATUS rename_file(FSP_FILE_SYSTEM *fs, PVOID, PWSTR from, PWSTR to,
 static NTSTATUS directory(FSP_FILE_SYSTEM *fs, PVOID ctx, PWSTR, PWSTR marker,
                           PVOID buffer, ULONG capacity, PULONG count) {
   auto &s = callback_state(fs);
+  CallbackAdmission admission(s);
+  if (admission.status() < 0)
+    return admission.status();
   *count = 0;
   WCHAR after[256]{};
   if (!marker || !wcscmp(marker, L".")) {

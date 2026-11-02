@@ -40,6 +40,9 @@ public:
   NTSTATUS status() const;
   DWORD win32_error() const;
   NTSTATUS callback_failure() const;
+  // Busy is before-effect: it does not change ordinary callback admission.
+  NTSTATUS try_stop_callbacks();
+  NTSTATUS resume_callbacks();
   const FSP_FILE_SYSTEM_INTERFACE &table() const;
   std::shared_ptr<void> context() const;
 

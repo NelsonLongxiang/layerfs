@@ -4,6 +4,46 @@
 > evidence is recorded in [F13](../issues/307/PRE-S8-F13-20261007.md). Kernel mount
 > readiness and Bash Exec remain S8; live namespace normalization remains S10.
 
+## Standalone Windows inherited-stream entry (2026-11-02)
+
+The product [layerfs-native](../../../engine/crates/layerfs-daemon/src/bin/layerfs-native.rs)
+process now runs the safe Session and opens the existing Store directly. Its
+[process owner](../../../engine/crates/layerfs-daemon/src/native/process.rs)
+starts one explicit absolute C++ native companion and owns its process receipt.
+No diagnostic DLL, fixture, host-mediated Store or Linux worker is in this route.
+Catalog/cursor authority enters only the bounded inherited stdin bootstrap frame;
+only mount/library paths, root serial and backing-volume path go to the child.
+
+[Bootstrap](../../../engine/crates/layerfs-daemon/src/native/bootstrap.rs) reads
+LFSBND01 once without EOF (the same stream then carries control), validates explicit
+identities and zeroes its temporary capability frame. It does not promise secure
+erasure. Only holders of the inherited streams can issue commands: there is no
+public listener, endpoint discovery, reconnection or remote authentication claim.
+After native root-service evidence, strictly increasing nonzero command ids admit
+status, commit published, and unmount; each reply carries the original id. Control
+records have a 128-byte processing bound; path/data transfers use separate bounded
+frames, not a total Workspace/file/flow limit. A failed command is never replayed.
+
+The private child channel uses versioned, length-bounded LFSRPC01 frames and
+monotonic request/response identity. [Workspace dispatch](../../../engine/crates/layerfs-daemon/src/native/port.rs)
+uses the existing Session operations, while control Commit constructs outside the
+Session mutex. Output delivery likewise runs outside Session bookkeeping. Partial
+input, original failed request/response bytes, typed delivery errors and uncertain
+Commit receipts retain custody. Loss or protocol failure closes the inherited
+child input to wake it, fences admission and returns failure, never a normal
+unmount. Retention is process-local, not crash recovery or a reattachment API.
+
+Unmount first reaches the native child. It atomically fences whole callbacks only
+when idle; a Busy probe leaves callbacks usable. Session then probes descriptor,
+Commit/capture/retained/request ownership. Its Busy restores native admission.
+After acknowledged preparation, the companion really stops/joins and detaches the
+filesystem, then requests product finish, releases native owners and sends its
+terminal receipt. The parent also waits for the original child exit before
+acknowledging unmount and releasing its closed Session. Zero handles alone is not
+OS drain. SDK Sandbox registration, workspace.mount and ordinary Exec are still
+unconnected; this is an explicit process entry, not the old Linux daemon deployment
+format or Windows Service installation.
+
 ## Native Windows logical Session (2026-11-02)
 
 [daemon::native::Session](../../../engine/crates/layerfs-daemon/src/native/session.rs)
@@ -51,9 +91,9 @@ The WinFsp diagnostic now uses this product Session and retains only fixture set
 explicit bootstrap framing, captured/history checks and observation logs. Its old
 private Commit/close/metadata/coordination implementations are removed. The daemon
 library now compiles on Windows; the old Unix-protected deployment configuration
-reader remains platform-gated and explicitly Unsupported elsewhere. This does not
-supply a Windows process launcher, authenticated IPC, product native host packaging,
-SDK Sandbox registration or workspace.mount. Those entrypoints remain unsupported.
+reader remains platform-gated and explicitly Unsupported elsewhere. The inherited
+stream entry above supplies an explicit native process pair; authenticated public
+IPC, SDK Sandbox registration and workspace.mount remain unconnected.
 
 Bridge control records carry typed Content/History identities and one original
 correlation. They support mount binding, Store-half Commit, status, terminal

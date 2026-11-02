@@ -702,6 +702,38 @@ their typed cause with the returned error and fence subsequent admission.
 
 Close still requires real native dispatcher drain/detach before product finish.
 The Rust operation checks product custody only and cannot authenticate the OS
-precondition. SDK Workspace/Sandbox/Exec and normal native process/IPC deployment
-remain unconnected; a product library used through this diagnostic ABI is not an
-SDK-mounted Workspace. See the [native Session result](../../core/docs/issues/352/WINDOWS-NATIVE-SESSION-2026-11-02.md).
+precondition. The standalone product entry below now owns its private native process
+pair; SDK Workspace/Sandbox/Exec and public registration/IPC remain unconnected.
+This diagnostic ABI is not an SDK-mounted Workspace. See the [native Session result](../../core/docs/issues/352/WINDOWS-NATIVE-SESSION-2026-11-02.md).
+
+## Standalone native product entry
+
+The ordinary product build now produces layerfs-native.exe (safe Rust parent) and
+layerfs-winfsp.exe (C++ WinFsp companion), using tools/build-native-windows.ps1.
+The parent opens the existing Store in-process, claims its explicit Session, and
+spawns the absolute companion executable with private inherited stdin/stdout.
+There is no diagnostic DLL or fixture in the mounted product path. The checker is
+used only before/after the proof for synthetic Store creation and immutable History
+verification. The C++ child receives paths/root identity, never catalog/cursor keys.
+
+Startup input is one LFSBND01 binding frame followed by increasing-id control lines:
+status, commit published, unmount. Credentials are not argv or log input; there is
+no public listener, discovery/reconnect or network-authentication claim. RootServed
+comes from the actual WinFsp kernel-root request, not process spawn. An inherited
+stream is authority for this explicitly launched process, not an SDK Sandbox.
+
+Native requests use bounded versioned frames and the existing Session operations.
+Normal unmount atomically probes full native callbacks and product ownership;
+Busy leaves service usable. Existing Cleanup/Close may still finish during the
+probe, and native admission is restored on a product Busy response. A successful
+terminal reply additionally requires actual native stop/join/detach, product Close,
+and the original child exit. Owner/protocol loss fails without pretending to have
+performed graceful unmount; original process-local failure custody remains.
+
+The standalone controller proves ordinary I/O, a 300023-byte binary crossing data
+windows, status, Published Commit, reversible held-handle Busy, exact fresh remount
+and read-only History. Boundary proofs cover malformed startup, native sequence,
+wrong root/window/partial frame, owner EOF and duplicate control. The deterministic
+callback admission proof observes the exact target directory, not a parent path
+lookup, and holds Open/Close callbacks to test Busy and resume during release.
+See the [standalone product result](../../core/docs/issues/352/WINDOWS-NATIVE-SERVICE-2026-11-02.md).

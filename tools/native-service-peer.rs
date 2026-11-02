@@ -1,0 +1,3 @@
+//! External malformed native child. Never linked into product source.
+use std::io::{self,Write};
+fn main(){let case=std::env::var("LAYERFS_NATIVE_TEST_PEER").expect("external test parent");let mut bytes=b"LFSRPC01".to_vec();let(id,op,body,size)=match case.as_str(){"sequence"=>(2u64,1u32,Vec::new(),0u32),"root"=>(0,101,999u64.to_le_bytes().to_vec(),8),"window"=>(1,1,Vec::new(),262145),"partial"=>{io::stdout().write_all(b"LFSRPC").unwrap();return;},_=>panic!("unknown peer case")};bytes.extend_from_slice(&id.to_le_bytes());bytes.extend_from_slice(&op.to_le_bytes());bytes.extend_from_slice(&size.to_le_bytes());bytes.extend(body);io::stdout().write_all(&bytes).unwrap();}

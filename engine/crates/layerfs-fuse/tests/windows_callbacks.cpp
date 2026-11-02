@@ -110,6 +110,16 @@ int wmain(int argc, wchar_t **argv) {
       return 1;
   }
   ++passed;
+  {
+    layerfs::WorkspaceCallbacks a(port, provider, {1024, 512, L"LayerFS"});
+    if (!check(a.try_stop_callbacks() == STATUS_SUCCESS &&
+                   a.try_stop_callbacks() == STATUS_INVALID_DEVICE_STATE &&
+                   a.resume_callbacks() == STATUS_SUCCESS &&
+                   a.resume_callbacks() == STATUS_INVALID_DEVICE_STATE,
+               "idle callback fence and resume are explicit once-only steps"))
+      return 1;
+  }
+  ++passed;
   std::weak_ptr<void> context, weak_provider = provider;
   {
     auto adapter = std::make_unique<layerfs::WorkspaceCallbacks>(
@@ -144,5 +154,5 @@ int wmain(int argc, wchar_t **argv) {
   printf("CALLBACK_ADAPTER_TEST_PASS cases=%u metadata=true setup=true "
          "per_mount_context=true retained_provider=true\n",
          passed);
-  return passed == 6 ? 0 : 1;
+  return passed == 7 ? 0 : 1;
 }

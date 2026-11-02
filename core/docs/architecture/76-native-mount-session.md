@@ -2,6 +2,36 @@
 
 > **Status:** Current general guide.
 
+## Product native companion and whole-callback fence (2026-11-02)
+
+The product [Windows companion](../../../engine/crates/layerfs-fuse/src/windows/host.cpp)
+now links WinFspMount and WorkspaceCallbacks into a standalone executable. Its
+[stdio provider](../../../engine/crates/layerfs-fuse/src/windows/stdio_port.cpp)
+connects only to the already-owning safe Rust parent through inherited anonymous
+streams; it opens no Store and receives no catalog/cursor credentials. One declared
+mount/provider runs per companion process. The owner reads backing-volume free
+space once at startup for the volume observation; this is not a live reservation
+or promise of exclusive Store capacity.
+
+Versioned frames contain an exact id/opcode and at most 256 KiB per processing
+window. Reads/writes still use existing 128 KiB windows. The channel serializes
+one native Workspace ABI exchange at a time; the parent constructs a control
+Commit outside Session bookkeeping so ordinary filesystem requests can proceed.
+No automatic resend follows read/write/peer/sequence failure. A background reader
+owns its shared provider until inherited input ends; failures wake waiters and
+never report graceful detach. Parent loss ends the native process with failure;
+no product abort/force recovery is claimed.
+
+CallbackAdmission counts a whole native callback, including metadata conversion
+and gaps between multiple ABI windows. try_stop_callbacks atomically fences idle
+ordinary admission; Busy changes nothing. Existing Cleanup/Close callbacks may
+still release while a reversible probe waits, and remain counted through their
+return. resume_callbacks cannot fail simply because that original release is still
+active. After product Session preparation, native stop/join disposes any remaining
+callback replies before detach and logical product finish. The external admission
+proof synchronizes a real target-directory Open and Close via the public observer;
+no fake clock, private source include or product test selector is used.
+
 ## Per-mount Windows callback adapter (2026-11-02)
 
 [WorkspaceCallbacks](../../../engine/crates/layerfs-fuse/src/windows/callbacks.hpp)
@@ -38,9 +68,9 @@ them until native drain/detach and acknowledged logical Close allow explicit
 release_library. Failed partial attach retains the State and callback/provider
 with it; destruction does not guess safe disposal. No thread/timeout/window count
 is used to infer that provider consumers are gone. Caller-owned observer code must
-likewise outlive callback service. The ABI provider's current singleton Rust
-Session is still diagnostic: independent adapter contexts do not establish several
-same-process provider Sessions, SDK registration, IPC or product Workspace Ready.
+likewise outlive callback service. The separate diagnostic DLL retains its singleton
+ABI; the product companion uses one inherited-stream provider per process. Neither
+route establishes SDK registration, public IPC or full product Workspace Ready.
 
 ## Windows WinFsp connection owner (2026-11-02)
 

@@ -105,6 +105,30 @@ WorkspaceCallbacks::WorkspaceCallbacks(const WorkspacePort &port,
 }
 NTSTATUS WorkspaceCallbacks::status() const { return state_->status; }
 DWORD WorkspaceCallbacks::win32_error() const { return state_->win32; }
+NTSTATUS WorkspaceCallbacks::try_stop_callbacks() {
+  auto &s = *state_;
+  std::lock_guard<std::mutex> lock(s.admission);
+  if (s.status < 0 || s.failure.load() < 0)
+    return STATUS_UNSUCCESSFUL;
+  if (s.stopped)
+    return STATUS_INVALID_DEVICE_STATE;
+  if (s.active_callbacks)
+    return STATUS_DEVICE_BUSY;
+  s.stopped = true;
+  return STATUS_SUCCESS;
+}
+NTSTATUS WorkspaceCallbacks::resume_callbacks() {
+  auto &s = *state_;
+  std::lock_guard<std::mutex> lock(s.admission);
+  if (s.failure.load() < 0)
+    return STATUS_UNSUCCESSFUL;
+  if (!s.stopped)
+    return STATUS_INVALID_DEVICE_STATE;
+  // Release callbacks may finish during a reversible Busy probe. Reopening
+  // ordinary admission must not fail merely because an original Close runs.
+  s.stopped = false;
+  return STATUS_SUCCESS;
+}
 NTSTATUS WorkspaceCallbacks::callback_failure() const {
   return state_->failure.load();
 }
