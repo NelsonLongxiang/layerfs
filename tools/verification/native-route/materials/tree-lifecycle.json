@@ -1,0 +1,57 @@
+{
+  "tree_spec_id": "ts_layerfs_native_lifecycle_r77_20261102",
+  "tree_spec_version": 1,
+  "title": "Retained Windows evidence: data, close failure and narrow readonly coordination",
+  "root": "native-lifecycle-evidence",
+  "target": {
+    "kind": "sqlite-snapshot",
+    "id": "snapshot.sqlite",
+    "sha256": "sha256:0f4224cdb7838d7c6b15ccdb0aef3c229183a961e6109e5c5b24203627fea65a"
+  },
+  "engine_version": "0.118.0",
+  "nodes": [
+    {
+      "id": "store-evidence",
+      "kind": "leaf",
+      "spec_id": "spec_c4f2f3fe21d2"
+    },
+    {
+      "id": "projection-read",
+      "kind": "leaf",
+      "spec_id": "spec_8266096fe8e4"
+    },
+    {
+      "id": "native-historical-diagnostics",
+      "kind": "leaf",
+      "spec_id": "spec_0eec659b881f"
+    },
+    {
+      "id": "workspace-historical-readiness",
+      "kind": "leaf",
+      "spec_id": "spec_4e132646e077"
+    },
+    {
+      "id": "git-lifecycle-qualification",
+      "kind": "leaf",
+      "spec_id": "spec_9714959b6172"
+    },
+    {
+      "id": "readonly-lifecycle-observation",
+      "kind": "leaf",
+      "spec_id": "spec_bd78438e026e"
+    },
+    {
+      "id": "native-lifecycle-evidence",
+      "kind": "agg",
+      "op": "all_pass",
+      "children": [
+        "store-evidence",
+        "projection-read",
+        "native-historical-diagnostics",
+        "workspace-historical-readiness",
+        "git-lifecycle-qualification",
+        "readonly-lifecycle-observation"
+      ]
+    }
+  ]
+}

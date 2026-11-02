@@ -1,0 +1,342 @@
+{
+  "contract_version": "1.2",
+  "spec_id": "spec_9714959b6172",
+  "spec_version": 1,
+  "title": "prepared spec",
+  "domain": "prepared",
+  "created": "2026-11-02T00:31:16.480Z",
+  "runtime_min": "1",
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1.2"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-11-02T00:31:16.459Z"
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "G1 保留Git运行必须逐命令和逐token审计声明源码、二进制身份、原始时间及",
+      "severity": "S1",
+      "source_clause": "G1 保留Git运行必须逐命令和逐token审计声明源码、二进制身份、原始时间及导入时间；不得修改已有Store、projection、native或历史Workspace行。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "git_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "identity_checked",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "source_commit",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "metadata_source",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "started",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "ended",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "imported_at",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G1",
+        "quote": "G1 保留Git运行必须逐命令和逐token审计声明源码、二进制身份、原始时间及导入时间；不得修改已有Store、projection、native或历史Workspace行。"
+      }
+    },
+    {
+      "id": "V2",
+      "role": "assert",
+      "title": "G2 Windows属性与目录枚举的保留Rust回归必须为metadata两项和",
+      "severity": "S1",
+      "source_clause": "G2 Windows属性与目录枚举的保留Rust回归必须为metadata两项和Overlay属性一项共三项通过，不把这些无内核回归冒充全NTFS支持。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "git_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "metadata_tests",
+                "op": "=",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G2",
+        "quote": "G2 Windows属性与目录枚举的保留Rust回归必须为metadata两项和Overlay属性一项共三项通过，不把这些无内核回归冒充全NTFS支持。"
+      }
+    },
+    {
+      "id": "V3",
+      "role": "assert",
+      "title": "G3 普通Windows Git必须有19条真实Git命令均退出0、两个Git版",
+      "severity": "S1",
+      "source_clause": "G3 普通Windows Git必须有19条真实Git命令均退出0、两个Git版本和17文件before清单，含7个松散对象、index、refs及ignored内容；保留LayerFS首次Committed及第二次UpToDate与重挂载断言检查点。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "git_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "git_commands",
+                "op": "=",
+                "value": 19
+              },
+              {
+                "col": "git_commits",
+                "op": "=",
+                "value": 2
+              },
+              {
+                "col": "manifest_files",
+                "op": "=",
+                "value": 17
+              },
+              {
+                "col": "objects",
+                "op": "=",
+                "value": 7
+              },
+              {
+                "col": "layerfs_new_commits",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "second_up_to_date",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "remount_checkpoint",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G3",
+        "quote": "G3 普通Windows Git必须有19条真实Git命令均退出0、两个Git版本和17文件before清单，含7个松散对象、index、refs及ignored内容；保留LayerFS首次Committed及第二次UpToDate与重挂载断言检查点。"
+      }
+    },
+    {
+      "id": "V4",
+      "role": "assert",
+      "title": "G4 重挂载字节一致性必须如实记录为原测试断言和checkpoint；本次保留材",
+      "severity": "S1",
+      "source_clause": "G4 重挂载字节一致性必须如实记录为原测试断言和checkpoint；本次保留材料没有独立after清单，不得伪称两份完整清单均可逐条重算，也不将缺少额外日志格式另立为产品验收门槛。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "git_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "independent_after_manifest",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "remount_checkpoint",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G4",
+        "quote": "G4 重挂载字节一致性必须如实记录为原测试断言和checkpoint；本次保留材料没有独立after清单，不得伪称两份完整清单均可逐条重算，也不将缺少额外日志格式另立为产品验收门槛。"
+      }
+    },
+    {
+      "id": "V5",
+      "role": "assert",
+      "title": "G5 Git完整生命周期资格必须所有挂载收到真实Close、无残留引用并正常结束",
+      "severity": "S1",
+      "source_clause": "G5 Git完整生命周期资格必须所有挂载收到真实Close、无残留引用并正常结束；SIGTERM取消、readiness超时或数据检查点成功不能代替正常关闭。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "git_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "close_complete",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "remaining_handles",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G5",
+        "quote": "G5 Git完整生命周期资格必须所有挂载收到真实Close、无残留引用并正常结束；SIGTERM取消、readiness超时或数据检查点成功不能代替正常关闭。"
+      }
+    },
+    {
+      "id": "V6",
+      "role": "assert",
+      "title": "G6 导入必须保留原Git整体FAIL及未完成的关闭事实，且本叶不宣布产品Wor",
+      "severity": "S1",
+      "source_clause": "G6 导入必须保留原Git整体FAIL及未完成的关闭事实，且本叶不宣布产品Workspace或通用映射排空资格；资格与数据局部成功分开。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "git_evidence",
+          "select": [
+            "id"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "qualification",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "nonpromotion",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "col": "raw_status",
+                "op": "=",
+                "value": "FAIL"
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 1
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G6",
+        "quote": "G6 导入必须保留原Git整体FAIL及未完成的关闭事实，且本叶不宣布产品Workspace或通用映射排空资格；资格与数据局部成功分开。"
+      }
+    },
+    {
+      "id": "V7",
+      "role": "assert",
+      "title": "G7 快照必须包含36份指定原始JSON与1份manifest共37份非空带SH",
+      "severity": "S1",
+      "source_clause": "G7 快照必须包含36份指定原始JSON与1份manifest共37份非空带SHA256材料；运行前和归档提取后audit重算事实、原件与历史表。",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "lifecycle_artifacts",
+          "select": [
+            "name"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "body",
+                "op": "!=",
+                "value": ""
+              },
+              {
+                "col": "sha256",
+                "op": "!=",
+                "value": ""
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 37
+      },
+      "expected_from": {
+        "kind": "material-extract",
+        "source_id": "materials",
+        "anchor": "git.md#G7",
+        "quote": "G7 快照必须包含36份指定原始JSON与1份manifest共37份非空带SHA256材料；运行前和归档提取后audit重算事实、原件与历史表。"
+      }
+    }
+  ],
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "materials_sha256": "5e0ef64e636adbc3114a445aff1cad74fec14d082066af67a20accd7a9d345da"
+}

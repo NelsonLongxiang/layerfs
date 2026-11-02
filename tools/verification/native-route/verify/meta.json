@@ -36,6 +36,14 @@
     {
       "file": "verify/specs/spec_0eec659b881f.json",
       "sha256": "cfe3038181f092b0a5e8dca1206c6a9af7f21130eba4dff33ca82fa548e0a328"
+    },
+    {
+      "file": "verify/specs/spec_9714959b6172.json",
+      "sha256": "506f262760ae97f8b5681e4da657b91bde70c37e8b5bf1d62e28504bed6aadcc"
+    },
+    {
+      "file": "verify/specs/spec_bd78438e026e.json",
+      "sha256": "e253007811d87a92a4e717115c67cf78620e32d33d23c4a13a2b1b32b380d95b"
     }
   ],
   "orchestration": [
@@ -61,6 +69,21 @@
     {
       "path": "tools/engine-test.mjs",
       "sha256": "8fa927d7c41131bd6d23b6a20ca5e3c93125497aa8765a91089ed954261e167e",
+      "role": "test"
+    },
+    {
+      "path": "tools/lifecycle-counterexamples.mjs",
+      "sha256": "b4e23333b4329f039c072e6d14c8768b0a5d3e8fe03498e846dbd20ecf08485b",
+      "role": "test"
+    },
+    {
+      "path": "tools/lifecycle-test.mjs",
+      "sha256": "0188541a907e987d73d9309d41ebe40a84ee8424305189362008137a0fd696ec",
+      "role": "test"
+    },
+    {
+      "path": "tools/lifecycle.mjs",
+      "sha256": "c5104549aaf93c755584e1669bdc2feaca7c8110b5991ea33298549eee3e1d11",
       "role": "test"
     },
     {
@@ -197,6 +220,30 @@
       "reason": "Format existing adversarial evidence controls for review; same cases and assertions.",
       "actor": "dsh-session:b9357cbc/gpt-6-astra",
       "at": "2026-11-01T19:11:18.627Z"
+    },
+    {
+      "path": "tools/lifecycle.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "c5104549aaf93c755584e1669bdc2feaca7c8110b5991ea33298549eee3e1d11",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
+      "at": "2026-11-02T00:30:33.456Z"
+    },
+    {
+      "path": "tools/lifecycle-test.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "0188541a907e987d73d9309d41ebe40a84ee8424305189362008137a0fd696ec",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
+      "at": "2026-11-02T00:30:33.518Z"
+    },
+    {
+      "path": "tools/lifecycle-counterexamples.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "b4e23333b4329f039c072e6d14c8768b0a5d3e8fe03498e846dbd20ecf08485b",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dsh-session:b9357cbc/gpt-6.1-sol",
+      "at": "2026-11-02T00:30:33.580Z"
     }
   ]
 }

@@ -159,3 +159,48 @@ verification and after extraction. Neither hashes nor local unsigned archives
 prove an arbitrary producer truthful or provide source-to-binary build attestation.
 General callbacks, complete kernel section inventory, mapped-page synchronization,
 crash recovery, sandbox/UI integration and product SDK Workspace remain unqualified.
+
+## Git and readonly mapping lifecycle leaves
+
+[Git material](materials/git.md) adds seven criteria and preserves the complete
+Git workload's FAIL (six PASS, normal-close criterion FAIL). It records nineteen
+Git commands, seventeen before-manifest files and the original remount assertion.
+There is no separately retained after-manifest: this is disclosed, not fabricated
+and not an additional product acceptance gate. Windows metadata's three focused
+Rust tests are separate from live kernel/NTFS qualification.
+
+[Readonly lifecycle material](materials/lifecycle.md) adds eight observation
+criteria. Ordinary reads and view-first release close normally; File-first release
+retains one Cleanup without Close. A separate owner-controlled experiment proves
+Busy-time reads remain usable, then observes original Close after owner release
+and one readonly reopen. Its PASS never means generic unmount qualification.
+
+The [importer](tools/lifecycle.mjs) copies a closed round-70 native snapshot into a
+fresh directory and embeds 36 original JSON receipts plus one manifest. It reuses
+the existing handle/coordination analyzers, rechecks all seven baseline tables and
+keeps original source/time and mixed binary identities. Initial import rechecks
+only currently retained reopen binaries. Older DLLs were replaced by subsequent
+shared builds, so their recorded hashes are not asserted to match current bytes.
+The original traced Git run did not record a complete harness hash; its attribution
+is declared and checked against selected source subtrees, not a clean build seal.
+
+```powershell
+node tools/verification/native-route/tools/lifecycle.mjs <closed-native-baseline.sqlite> <fresh-output>
+node tools/verification/native-route/tools/lifecycle.mjs --audit <fresh-output>/snapshot.sqlite
+node tools/verification/native-route/tools/lifecycle-test.mjs <fresh-output>/snapshot.sqlite
+node tools/verification/native-route/tools/lifecycle-counterexamples.mjs <fresh-output>/snapshot.sqlite <fresh-synthetic-output>
+```
+
+[Six-leaf material](materials/tree-lifecycle.json) pins the round-77 mixed snapshot.
+New specs supplement, never retarget, the four historical leaves. The raw audit
+requires these exact analyzer sources; archived snapshots need no old host binary
+paths, but do not establish arbitrary-producer honesty or signed source/binary
+provenance. Run raw audit before verification and after extracting archive snapshots.
+Use the same pinned engine and explicit isolated home. The retained result is four
+PASS leaves, two FAIL leaves (historical Workspace and Git close), aggregate FAIL.
+
+Checks: 43 parser/audit controls including 41 corruptions, 19 new synthetic predicate
+fixtures (two positive, seventeen negative), and 37 unchanged native audit checks.
+The six leaf archives contain materials and exact snapshot bytes; each extracted
+snapshot is re-audited. The aggregate keeps its ordinary report/spec archive.
+See the [lifecycle verifier result](../../../core/docs/issues/352/NATIVE-VERIFIER-LIFECYCLE-2026-11-02.md).
