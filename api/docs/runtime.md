@@ -419,6 +419,18 @@ and there is no network, registry, process-tree, quota or general host isolation
 claim. Do not represent this local boundary as complete support for untrusted
 code or an isolated SDK Sandbox.
 
+Named IPC pipes are a separate access boundary. On the pinned Node24.12.0/libuv
+1.51.0 Windows build, a restricted command’s child_process IPC setup creates a
+pipe server but fails opening the client with Win32 error5, reported by Node as
+spawn EPERM before child creation. The observed pipe DACL grants Everyone read
+only and does not contain the command policy SID, despite that SID being in the
+token default DACL; its low integrity label is already correct. Token defaults
+do not establish the security descriptor of every object an application creates.
+No automatic policy broadening, user-SID restriction bypass, library patch or
+plain-token fallback is made for this limitation. Inherited standard streams and
+ordinary descendants remain usable; this is not Node IPC support. See the
+[IPC access-boundary record](../../core/docs/issues/352/WINDOWS-NATIVE-IPC-2026-11-03.md).
+
 The launcher reports its original target PID and raw Windows DWORD exit code on
 a private inherited receipt pipe, separate from command stdout/stderr. A command
 cannot fake completion by printing a receipt line. The command handle/finished

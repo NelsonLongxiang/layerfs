@@ -93,6 +93,12 @@ backend files, inherit that grant to siblings, or change the mounted-volume data
 rights. Callback context keeps both descriptors alive through mount ownership.
 This permits absolute cwd metadata and ordinary child creation on the selected
 mount without broadening token privileges or exposing private runtime paths.
+Application-created IPC objects remain independent access boundaries. The pinned
+Node/libuv named-pipe stdio setup fails client open under this restricted token:
+the actual object lacks the policy write/WRITE_DAC grant, even though the token
+default DACL contains it. The external SDK/probe coverage records that refusal
+without changing product token, pipe security or inherited command data handles.
+See the [IPC limitation evidence](../issues/352/WINDOWS-NATIVE-IPC-2026-11-03.md).
 
 The [runtime adapter](../../../api/runtime/src/platform/native-windows/restricted.js)
 reads target identity/exit from an inherited pipe excluded from the target's
