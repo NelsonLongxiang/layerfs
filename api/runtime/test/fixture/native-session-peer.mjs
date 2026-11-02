@@ -36,7 +36,10 @@ process.stdin.on("data",chunk=>{
     if(mode==="identity-workspace"||mode==="sdk-lost-mount")answer=answer.replace(workspace,"ff".repeat(32));
     if(mode==="identity-branch")answer=answer.replace(branch,"11"+"ff".repeat(16));
     if(mode==="identity-overflow")answer=answer.replace("revision=7","revision=18446744073709551616");
-    send(answer);
+    if(mode==="sdk-held-state"&&existsSync(log+".hold")){
+     const token=readFileSync(log+".hold","utf8");writeFileSync(log+".held",token);
+     const waiting=setInterval(()=>{if(existsSync(log+".release")&&readFileSync(log+".release","utf8")===token){clearInterval(waiting);send(answer);}},5);
+    }else send(answer);
    }else if(word==="commit"){
     let answer=publication(id);
     if(mode==="identity-null-head")answer=answer.replace("head="+head,"head=-");
@@ -44,7 +47,7 @@ process.stdin.on("data",chunk=>{
     if(mode==="identity-short-root")answer=answer.replace(rootId,"ff");
     send(answer);
    }else normal(id,word);
-   if(!['identity-valid','dirty-clean','sdk-scope','sdk-loss-state','sdk-loss-publication'].includes(mode)){process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
+   if(!['identity-valid','dirty-clean','sdk-scope','sdk-loss-state','sdk-loss-publication','sdk-held-state'].includes(mode)){process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}
    continue;
   }
   if(mode==="foreign-id"){send(status(String(BigInt(id)+1n)));process.stdin.pause();clearTimeout(deadline);setTimeout(()=>process.exit(0),20);}

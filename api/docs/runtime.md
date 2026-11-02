@@ -150,6 +150,9 @@ explicit commitScope: "published". It does not replace the client’s Store bind
 use a worker, open another Store or switch global transport. Wrong instance or
 project selection refuses before effects. A client registers once; another client
 can explicitly register the same original instance and use its still-owned paths.
+SDK and direct instance.mount calls resolve the same original Session owners,
+including mounts created before client registration. Direct unmount removes that
+mount from SDK listings; SDK unmount closes the same handle returned directly.
 A client not registered remains on its original route. This registration is
 process-local, not machine discovery or cross-process credentials.
 
@@ -163,7 +166,11 @@ trusted/restricted ordinary executables; the SDK registration does not pretend
 that Windows argument-vector execution is Bash.
 
 workspace.mount requires that named original instance still running, uses its
-existing mount implementation and admits at most 16 original Workspace owners.
+existing mount implementation and admits at most 16 original Workspace owners
+across both SDK and direct entrypoints, including pending admissions. The shared
+owner claims capacity before awaiting, rather than each caller counting its own
+registry. A closed filesystem whose command streams remain owned is not listed
+as a mounted Workspace; it still occupies original ownership and prevents close.
 It never creates, restarts or changes instance placement. Mounts, incomplete
 admissions and command completion retain their original lifecycle; an unknown
 admission cannot be presented as an empty list or silently deleted.

@@ -32,6 +32,7 @@ export class NativeSession {
   #state = "starting";
   #root;
   #boundBranch;
+  #handle;
   #ready = deferred();
   #timer;
   #line = Buffer.alloc(0);
@@ -51,6 +52,14 @@ export class NativeSession {
   }
   get path() { return this.#options.path; }
   get work() { return this.#options.work; }
+  get instance() { return this.#options.instance; }
+  get branch() { return this.#options.branch; }
+  handle() {
+    if (this.#state === "retained") throw this.#failure.error;
+    if (["closed", "failed"].includes(this.#state)) throw new LayerFSError("NotMounted", "this original native Workspace is no longer mounted", { session: this.#options.id });
+    if (this.#state !== "serving") throw new LayerFSError("Busy", "original native Workspace is starting or terminating", { session: this.#options.id });
+    return this.#handle;
+  }
   observation() {
     return { id: this.#options.id, path: this.path, work: this.work, ...(this.#options.instance ? { instance: this.#options.instance } : {}), ...(this.#options.project ? { project: this.#options.project, branch: this.#options.branch } : {}), ...this.#commands.observation(), restricted: Boolean(this.#options.restricted), state: this.#state, pid: this.#child?.pid ?? null, root: this.#root?.toString() ?? null };
   }
@@ -133,7 +142,7 @@ export class NativeSession {
       if (this.#state !== "starting") throw new Error("duplicate native readiness");
       this.#root = uint(match[1]); if (!this.#root) throw new Error("zero root");
       clearTimeout(this.#timer); this.#state = "serving";
-      this.#ready.resolve(Object.freeze({ id: this.#options.id, path: this.path,
+      this.#handle = Object.freeze({ id: this.#options.id, path: this.path,
         status: () => this.#call("status"),
         state: () => this.#call("state"),
         commit: (scope, details = false) => scope === "published" && typeof details === "boolean" ? this.#call(details ? "publication" : "commit") : Promise.reject(new LayerFSError("Unsupported", "native Session commit requires explicit scope \"published\"; application-visible mapping capture is unsupported", null)),
@@ -143,7 +152,8 @@ export class NativeSession {
           if (this.#state !== "serving") return Promise.reject(new LayerFSError(this.#state === "closed" ? "NotMounted" : "Busy", "native command needs its original serving Session", null));
           return this.#commands.start(executable, args, options);
         },
-      }));
+      });
+      this.#ready.resolve(this.#handle);
       return;
     }
     match = /^NATIVE_SERVICE_(STATUS|STATE|COMMIT|PUBLICATION|UNMOUNTED|REFUSED) id=([0-9]+) (.*)$/.exec(line);

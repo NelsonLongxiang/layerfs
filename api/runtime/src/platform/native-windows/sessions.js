@@ -99,6 +99,7 @@ export class NativeSessions {
     this.#held.set(input.id, session);
     return session.start();
   }
+  owned(instance) { return [...this.#held.values()].filter((s) => s.instance === instance); }
   list() { return [...this.#held.values()].map((s) => s.observation()); }
   assertIdle() {
     if (!this.#held.size) return;

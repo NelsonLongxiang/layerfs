@@ -12,7 +12,7 @@ const fake=fileURLToPath(new URL('../../agent/test/fixture/fake-native.cjs',impo
 const native=(await import(pathToFileURL(fake).href)).default;
 const runtime=await LayerFSRuntime.open({home:join(out,'home'),native:true,sweep:false});mkdirSync(join(out,'home/.runtime/projects'),{recursive:true});writeFileSync(join(out,'home/.runtime/projects/example.json'),JSON.stringify({name:'example',volume:join(out,'volume')}));
 process.env.LAYERFS_HOME=join(out,'home');process.env.LAYERFS_STORE_PATH=store;
-process.env.NATIVE_RUNTIME_PEER_CASE=['sdk-loss-bootstrap','sdk-loss-state','sdk-loss-publication','sdk-lost-mount'].includes(selected)?selected:'sdk-scope';process.env.NATIVE_RUNTIME_PEER_LOG=join(out,'session-calls.json');
+process.env.NATIVE_RUNTIME_PEER_CASE=selected==='direct-loss-bootstrap'?'sdk-loss-bootstrap':selected==='pending-mixed'?'sdk-held-state':['sdk-loss-bootstrap','sdk-loss-state','sdk-loss-publication','sdk-lost-mount'].includes(selected)?selected:'sdk-scope';process.env.NATIVE_RUNTIME_PEER_LOG=join(out,'session-calls.json');
 const sessionPeer=fileURLToPath(new URL('./fixture/native-session-peer.mjs',import.meta.url)),p=resolve(peer);
 let shop,plain,failure=null;const events=[];
 try{
@@ -26,6 +26,7 @@ try{
   const secondStore=join(out,'another.sqlite');writeFileSync(secondStore,'not same Store');process.env.LAYERFS_STORE_PATH=secondStore;const wrong=await LayerFS.open('example');process.env.LAYERFS_STORE_PATH=store;await assert.rejects(runtime.native.bindClient(wrong,instance,{commitScope:'published'}),{code:'Unauthorized'});await wrong.close();
   const transport=shop[STATE].transport;shop[STATE].transport={};await assert.rejects(runtime.native.bindClient(shop,instance,{commitScope:'published'}),{code:'Unsupported'});shop[STATE].transport=transport;
  }
+ const directBefore=selected==='mixed'?await instance.mount('feature'):null;
  const original=shop[STATE].transport;
  const registration=await runtime.native.bindClient(shop,instance,{commitScope:'published'});assert.equal(registration.mode,'windows-restricted');assert.equal(shop[STATE].transport,original);
  if(selected==='scope'){
@@ -37,6 +38,32 @@ try{
   const publication=await shop.workspace.commit(ws);assert.equal(publication.head,'12'+'ab'.repeat(32));assert.equal(publication.root,'ef'.repeat(32));assert.equal(publication.kind,'Committed');
   await shop.close();shop=undefined;assert.equal((await instance.status()).sessions,1);
   const attached=await LayerFS.open('example');await runtime.native.bindClient(attached,instance,{commitScope:'published'});assert.equal((await attached.sandbox.list_workspaces(registration.sandbox)).items.length,1);await attached.workspace.unmount(ws,true);await attached.sandbox.close(registration.sandbox);await attached.close();await plain.close();plain=undefined;await runtime.close();
+ }else if(selected==='mixed'){
+  const ws={sandbox:registration.sandbox,path:directBefore.path};
+  const listed=await shop.sandbox.list_workspaces(registration.sandbox);assert.equal(listed.items.length,1,'SDK list must include the original direct mount');assert.equal(listed.items[0].workspace,directBefore.id);
+  const status=await LayerFSBackend.of(shop).daemon.workspace.status(ws);assert.equal(status.workspace,directBefore.id);assert.equal((await shop.workspace.commit(ws)).head,'12'+'ab'.repeat(32));
+  const secondDirect=await instance.mount('feature');assert.equal((await shop.sandbox.list_workspaces(registration.sandbox)).items.length,2);
+  await secondDirect.unmount(true);assert.equal((await shop.sandbox.list_workspaces(registration.sandbox)).items.length,1);await assert.rejects(LayerFSBackend.of(shop).daemon.workspace.status({sandbox:registration.sandbox,path:secondDirect.path}),{code:'NotMounted'});
+  const other=await runtime.native.create({project:'example',executable:process.execPath,host:sessionPeer,winfsp:sessionPeer,restrictedLauncher:p,work:join(out,'other-instance')});mkdirSync(join(out,'other-instance'));const foreign=await other.mount('feature');await assert.rejects(LayerFSBackend.of(shop).daemon.workspace.status({sandbox:registration.sandbox,path:foreign.path}),{code:'NotMounted'});await foreign.unmount(true);await other.close();
+  await shop.workspace.unmount(ws,true);await assert.rejects(directBefore.status(),{code:'NotMounted'});assert.deepEqual((await shop.sandbox.list_workspaces(registration.sandbox)).items,[]);assert.equal((await instance.status()).sessions,0);
+  await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'one-original-owner',beforeBind:true,directAfterBind:true,crossEntryUnmount:true,foreignInstanceRefused:true});
+ }else if(selected==='pending-mixed'){
+  const direct=await instance.mount('feature'),ws={sandbox:registration.sandbox,path:direct.path};
+  const marker=join(out,'session-calls.json');
+  const waitHeld=async token=>{const until=Date.now()+2000;while(!existsSync(marker+'.held')||readFileSync(marker+'.held','utf8')!==token){assert.ok(Date.now()<until);await new Promise(ok=>setTimeout(ok,5));}};
+  writeFileSync(marker+'.hold','first');const state=direct.state();await waitHeld('first');
+  await assert.rejects(shop.workspace.unmount(ws,true),{code:'Busy'});await assert.rejects(instance.close(),{code:'MountsActive'});writeFileSync(marker+'.release','first');assert.equal((await state).workspace,direct.id);
+  writeFileSync(marker+'.hold','second');const sdkState=LayerFSBackend.of(shop).daemon.workspace.status(ws);await waitHeld('second');await assert.rejects(direct.unmount(true),{code:'Busy'});writeFileSync(marker+'.release','second');assert.equal((await sdkState).workspace,direct.id);
+  await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'one-inflight-control-owner',directToSDK:true,sdkToDirect:true});
+ }else if(selected==='capacity-mixed'){
+  const mounts=await Promise.all(Array.from({length:15},(_,n)=>n%2?shop.workspace.mount(registration.sandbox,'feature'):instance.mount('feature')));
+  const terminal=await Promise.allSettled([instance.mount('feature'),instance.mount('feature'),shop.workspace.mount(registration.sandbox,'feature')]);assert.equal(terminal.filter(r=>r.status==='fulfilled').length,1,'all entrypoints share one capacity admission');assert.equal(terminal.filter(r=>r.status==='rejected'&&r.reason.code==='Capacity').length,2);
+  for(const r of terminal)if(r.status==='fulfilled')mounts.push(r.value);assert.equal((await instance.status()).sessions,16);assert.equal((await shop.sandbox.list_workspaces(registration.sandbox)).items.length,16);
+  for(const mount of mounts)await shop.workspace.unmount({sandbox:registration.sandbox,path:mount.path},true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'mixed-capacity',admitted:16,rejected:2});
+ }else if(selected==='direct-loss-bootstrap'){
+  await assert.rejects(instance.mount('feature'),{code:'Unknown'});assert.equal(existsSync(join(out,'session-calls.json')),false);
+  await assert.rejects(shop.sandbox.list_workspaces(registration.sandbox),{code:'Unknown'});await assert.rejects(shop.sandbox.close(registration.sandbox),{code:'Unknown'});await assert.rejects(runtime.close(),{code:'Unknown'});
+  assert.equal((await runtime.native.list())[0].state,'retained');assert.equal((await runtime.native.instances())[0].retainedSessions,1);assert.equal(existsSync(join(out,'session-calls.json')),false);events.push({label:'direct-unreturned-owner',listedAsUnknown:true,noResend:true});
  }else if(selected==='capacity'){
   const mounts=[];for(let n=0;n<16;n++)mounts.push(await shop.workspace.mount(registration.sandbox,'feature'));await assert.rejects(shop.workspace.mount(registration.sandbox,'feature'),{code:'Capacity'});assert.equal((await instance.status()).sessions,16);for(const ws of mounts)await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();
  }else{

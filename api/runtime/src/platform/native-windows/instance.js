@@ -40,7 +40,8 @@ export class NativeInstance {
       mode: "windows-restricted", state: this.#state, pid: this.#child?.pid ?? null,
       sessions: this.#owned().length, retainedSessions: this.#owned().filter((s) => s.state === "retained" || s.executionRetained).length };
   }
-  #owned() { return this.#sessions.list().filter((s) => s.instance === this.#options.id); }
+  #owned() { return this.#sessions.owned(this.#options.id).map((s) => s.observation()); }
+  workspaces() { this.#admit(); return this.#sessions.owned(this.#options.id); }
   #admit() {
     if (this.#state === "retained") throw this.#failure.error;
     if (this.#state !== "running") throw new LayerFSError("NoSuchSandbox", "this original native instance is not running; create one explicitly (mount never starts one)", { instance: this.#options.id });
@@ -128,6 +129,8 @@ export class NativeInstance {
   }
   async #attach(branch) {
     this.#admit();
+    // NativeSessions claims synchronously before its first await, for both entrypoints.
+    if (this.#owned().length >= 16) throw new LayerFSError("Capacity", "this native instance already owns 16 Workspace admissions; unmount explicitly or create another instance", null);
     const o = this.#options;
     const n = ++this.#mount;
     const policy = Object.freeze({ executable: o.restrictedLauncher, sid: o.sid, context: this.#context, admit: () => this.#admit() });

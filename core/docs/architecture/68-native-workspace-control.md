@@ -16,6 +16,11 @@ creation, Bash Exec and unimplemented daemon read models remain Unsupported;
 returned image null and mode windows-restricted disclose the actual native scope.
 Mount never creates or restarts the original instance. Client close releases its
 Store client only, not runtime-owned mounts or the original native instance.
+SDK lookup/listing consumes the original NativeSessions ownership set; it does
+not keep a second mount registry. The shared instance admission enforces capacity
+for direct and SDK mounts before awaiting. A directly closed filesystem disappears
+from mounted listings while any original command completion still retains its
+owner and prevents instance close.
 
 The product [identity receipt adapter](../../../engine/crates/layerfs-daemon/src/native/receipt.rs)
 encodes the original bound snapshot and original installed Commit completion.
