@@ -51,6 +51,9 @@ public:
                        PULONG transferred) const;
   // Caller fences callback/namespace admission before this irreversible step.
   // These are separate so logical revoke can occur only after native drain.
+  // One zero-filter invalidation of an already admitted native name. This is
+  // cache work only; success is neither a Close nor a drain acknowledgement.
+  NTSTATUS invalidate_clean_file(PCWSTR name, UINT32 length);
   NTSTATUS stop();
   NTSTATUS detach();
   // Release only after higher-level logical Close acknowledged completion.

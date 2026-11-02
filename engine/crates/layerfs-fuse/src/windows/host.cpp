@@ -2,6 +2,7 @@
 // Session.
 #define NOMINMAX
 #include "callbacks.hpp"
+#include "close.hpp"
 #include "mount.hpp"
 #include "stdio_port.hpp"
 #include <cwchar>
@@ -75,7 +76,7 @@ int wmain(int argc, wchar_t **argv) {
       channel->event(104, status_body(result));
       return 1;
     }
-    result = channel->control(20);
+    result = layerfs::coordinate_close(*channel, mount, adapter);
     if (result < 0) {
       if (result == STATUS_DEVICE_BUSY ||
           result == static_cast<NTSTATUS>(0xe0f50001)) {

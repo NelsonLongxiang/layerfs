@@ -44,6 +44,32 @@ and return the original correlation. A JavaScript status preflight cannot replac
 that decision. Legacy explicit standalone unmount behavior stays unchanged.
 See the [runtime contract](../../../api/docs/runtime.md#bind-an-existing-sdk-client-to-a-running-native-instance).
 
+## Windows native cache-reference close coordination (2026-11-03)
+
+Normal unmount now connects the existing Session coordination admission to the
+[native close port](../../../engine/crates/layerfs-daemon/src/native/close_port.rs)
+on the same private inherited mount channel. It is not a Store RPC or SDK Exec
+route. Before cache work the original Session checks cleaned/named/read-only
+file-only candidates, write/delete/capture/Commit/retained exclusions and clean
+frontier policy. Serial/name agreement is checked per original candidate while
+namespace/Commit mutation admission is held; no Session lock spans OS I/O.
+
+The [native close owner](../../../engine/crates/layerfs-fuse/src/windows/close.cpp)
+asks WinFsp once per candidate for zero-filter cache invalidation, not an ordinary
+file reopen/read or synthetic mutation notification. Submission is asynchronous;
+original Cleanup never substitutes for Close. Only Close removes the existing
+OpenFile/lookup owner. Indexed readiness reads handle length and active requests;
+the whole-callback gate also includes response conversion after provider release.
+A fixed 10-second readiness bound returns reversible Busy with serving admission
+restored if any mapping/reference persists; no cache request is retried.
+
+The original clean/discard prepare is rechecked after actual owner drain, then
+native stop/join/detach precedes product finish, library release and process ack.
+Unknown transfer, malformed reply or native failure retains original custody;
+no forced descriptor release, token/ACL change, new registry or kernel driver is
+added. This is scoped functional evidence, not all-mapping/kernel qualification.
+See the [runtime close contract](../../../api/docs/runtime.md#native-cache-reference-close-coordination).
+
 ## Bounded Windows native reference observation (2026-11-03)
 
 The [Session observation](../../../engine/crates/layerfs-daemon/src/native/observation.rs)

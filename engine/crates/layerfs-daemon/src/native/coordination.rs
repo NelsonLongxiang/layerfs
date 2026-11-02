@@ -101,6 +101,18 @@ impl Session {
         self.coordinating = Some(token);
         Ok(token)
     }
+    pub(super) fn begin_native_close(&mut self, clean: bool) -> Result<u64> {
+        // Candidate/unknown admission is unchanged; clean rejection must precede
+        // any kernel invalidation while the transport has fenced callbacks.
+        let token = self.begin_close_coordination()?;
+        if clean {
+            if let Err(error) = self.require_clean_close() {
+                self.end_close_coordination(token, false)?;
+                return Err(error);
+            }
+        }
+        Ok(token)
+    }
     pub fn next_close_candidate(
         &self,
         token: u64,
@@ -131,6 +143,31 @@ impl Session {
             return Err(refused(0x80000011, "name no longer identifies held serial"));
         }
         Ok(Some((id, h.serial, p.to_owned())))
+    }
+    pub(super) fn close_coordination_progress(&self, token: u64) -> Result<(u64, u64)> {
+        self.accepting()?;
+        if self.coordinating != Some(token) {
+            return Err(refused(0xc000000d, "foreign coordination observation"));
+        }
+        let work = self.requests.work().map_err(super::types::sourced)?;
+        Ok((self.handles.len() as u64, work.active as u64))
+    }
+    pub(super) fn finish_native_close(
+        &mut self,
+        token: u64,
+        prepare: bool,
+        clean: bool,
+    ) -> Result<()> {
+        self.end_close_coordination(token, false)?;
+        if prepare {
+            if clean {
+                self.prepare_clean_close()
+            } else {
+                self.prepare_close()
+            }
+        } else {
+            Ok(())
+        }
     }
     /// Release only this coordination admission. Actual handles end only in Close.
     pub fn end_close_coordination(&mut self, token: u64, prepare: bool) -> Result<()> {

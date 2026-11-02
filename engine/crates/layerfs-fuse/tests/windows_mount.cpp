@@ -26,7 +26,9 @@ int wmain(int argc, wchar_t **argv) {
                    !before.filesystem_owned &&
                    before.phase == layerfs::MountPhase::Empty,
                "new owner has no effects") ||
-        !check(owner.stop() == STATUS_INVALID_DEVICE_STATE &&
+        !check(owner.invalidate_clean_file(L"/alpha.txt", 10) ==
+                       STATUS_INVALID_DEVICE_STATE &&
+                   owner.stop() == STATUS_INVALID_DEVICE_STATE &&
                    owner.detach() == STATUS_INVALID_DEVICE_STATE &&
                    owner.release_library() == STATUS_INVALID_DEVICE_STATE,
                "out of order terminal operations refused") ||
@@ -99,7 +101,9 @@ int wmain(int argc, wchar_t **argv) {
                    owner.facts().library_owned &&
                    !owner.facts().filesystem_owned,
                "exact loaded DLL retained without invented filesystem") ||
-        !check(owner.stop() == STATUS_INVALID_DEVICE_STATE &&
+        !check(owner.invalidate_clean_file(L"/alpha.txt", 10) ==
+                       STATUS_INVALID_DEVICE_STATE &&
+                   owner.stop() == STATUS_INVALID_DEVICE_STATE &&
                    owner.detach() == STATUS_INVALID_DEVICE_STATE &&
                    owner.release_library() == STATUS_INVALID_DEVICE_STATE,
                "failed partial attach is not guessed cleanup"))

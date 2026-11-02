@@ -1,6 +1,7 @@
 //! Safe process-local Windows Workspace session. OS mounting and ABI remain separate.
 mod binding;
 mod bootstrap;
+mod close_port;
 mod commit;
 mod control;
 mod coordination;

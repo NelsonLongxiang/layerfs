@@ -5,8 +5,8 @@ $ErrorActionPreference='Stop'
 if(Test-Path -LiteralPath $Out){throw 'Use a fresh output directory'}
 $native=Join-Path $PSScriptRoot '../engine/crates/layerfs-fuse/src/windows'
 $cl=Join-Path $VcTools 'bin/Hostx64/x64/cl.exe'
-$source=@('host.cpp','stdio_port.cpp','mount.cpp','callbacks.cpp','metadata.cpp')|ForEach-Object {Join-Path $native $_}
-$headers=@('stdio_port.hpp','mount.hpp','callbacks.hpp','workspace_port.hpp','callback_state.hpp')|ForEach-Object {Join-Path $native $_}
+$source=@('host.cpp','close.cpp','stdio_port.cpp','mount.cpp','callbacks.cpp','metadata.cpp')|ForEach-Object {Join-Path $native $_}
+$headers=@('close.hpp','stdio_port.hpp','mount.hpp','callbacks.hpp','workspace_port.hpp','callback_state.hpp')|ForEach-Object {Join-Path $native $_}
 foreach($p in @($cl)+$source+$headers+@((Join-Path $WinFspRoot 'inc/winfsp/winfsp.h'))){if(-not(Test-Path -LiteralPath $p -PathType Leaf)){throw ('Missing build input '+$p)}}
 $dest=(New-Item -ItemType Directory -Path $Out).FullName
 $args=@('/nologo','/std:c++17','/EHsc','/utf-8','/W4','/WX','/MT','/DUNICODE','/D_UNICODE',('/I'+(Join-Path $VcTools 'include')),('/I'+$native),('/external:I'+(Join-Path $WinFspRoot 'inc')),'/external:W0')

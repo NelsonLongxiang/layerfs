@@ -237,6 +237,20 @@ impl Session {
     pub fn cleanup_file(&mut self, handle: u64) -> Result<()> {
         self.attempt(|s| s.cleanup_file(handle))
     }
+    pub(super) fn begin_native_close(&mut self, clean: bool) -> Result<u64> {
+        self.attempt(|s| s.begin_native_close(clean))
+    }
+    pub(super) fn close_coordination_progress(&self, token: u64) -> Result<(u64, u64)> {
+        self.observe_result(self.inner().close_coordination_progress(token))
+    }
+    pub(super) fn finish_native_close(
+        &mut self,
+        token: u64,
+        prepare: bool,
+        clean: bool,
+    ) -> Result<()> {
+        self.attempt(|s| s.finish_native_close(token, prepare, clean))
+    }
     pub fn begin_close_coordination(&mut self) -> Result<u64> {
         self.attempt(|s| s.begin_close_coordination())
     }

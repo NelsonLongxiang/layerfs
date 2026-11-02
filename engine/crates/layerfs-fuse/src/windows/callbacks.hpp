@@ -46,6 +46,8 @@ public:
   // Busy is before-effect: it does not change ordinary callback admission.
   NTSTATUS try_stop_callbacks();
   NTSTATUS resume_callbacks();
+  // Whole callbacks only; not evidence that native descriptors are released.
+  bool callbacks_idle() const;
   const FSP_FILE_SYSTEM_INTERFACE &table() const;
   std::shared_ptr<void> context() const;
 

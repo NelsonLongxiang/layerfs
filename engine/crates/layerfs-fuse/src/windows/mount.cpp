@@ -4,6 +4,7 @@
 #include "mount.hpp"
 #include <cwchar>
 #include <string>
+#include <vector>
 
 namespace layerfs {
 struct WinFspMount::State {
@@ -25,6 +26,7 @@ struct WinFspMount::State {
   decltype(&FspFileSystemStartDispatcher) start = nullptr;
   decltype(&FspFileSystemStopDispatcher) stop = nullptr;
   decltype(&FspFileSystemAddDirInfo) add = nullptr;
+  decltype(&FspFileSystemNotify) notify = nullptr;
   decltype(&FspFileSystemGetDispatcherResultF) dispatcher_result = nullptr;
 };
 WinFspMount::WinFspMount() : state_(std::make_unique<State>()) {}
@@ -97,6 +99,7 @@ NTSTATUS WinFspMount::attach(PCWSTR library, PCWSTR directory,
   LFS_LOAD(start, FspFileSystemStartDispatcher);
   LFS_LOAD(stop, FspFileSystemStopDispatcher);
   LFS_LOAD(add, FspFileSystemAddDirInfo);
+  LFS_LOAD(notify, FspFileSystemNotify);
   LFS_LOAD(dispatcher_result, FspFileSystemGetDispatcherResultF);
 #undef LFS_LOAD
   auto status = s.create(const_cast<PWSTR>(L"WinFsp.Disk"), &s.params,
@@ -150,6 +153,24 @@ BOOLEAN WinFspMount::add_dir_info(FSP_FSCTL_DIR_INFO *info, PVOID buffer,
   if (!state_->library || !state_->filesystem || !state_->add)
     return FALSE;
   return state_->add(info, buffer, capacity, transferred);
+}
+NTSTATUS WinFspMount::invalidate_clean_file(PCWSTR name, UINT32 length) {
+  auto &s = *state_;
+  if (s.failure.step || s.phase != MountPhase::RootServed)
+    return STATUS_INVALID_DEVICE_STATE;
+  if (!name || !length || name[0] != L'/' ||
+      length > (UINT16_MAX - sizeof(FSP_FSCTL_NOTIFY_INFO)) / sizeof(WCHAR))
+    return STATUS_INVALID_PARAMETER;
+  const auto size = sizeof(FSP_FSCTL_NOTIFY_INFO) + length * sizeof(WCHAR);
+  // UINT64 backing supplies native structure alignment. Padding is not sent.
+  std::vector<UINT64> storage((size + sizeof(UINT64) - 1) / sizeof(UINT64));
+  auto info = reinterpret_cast<FSP_FSCTL_NOTIFY_INFO *>(storage.data());
+  info->Size = static_cast<UINT16>(size);
+  // Filter and Action stay zero: invalidate the admitted name, report no
+  // change.
+  for (UINT32 i = 0; i < length; ++i)
+    info->FileNameBuf[i] = name[i] == L'/' ? L'\\' : name[i];
+  return s.notify(s.filesystem, info, size);
 }
 NTSTATUS WinFspMount::stop() {
   auto &s = *state_;

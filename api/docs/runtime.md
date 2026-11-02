@@ -121,6 +121,33 @@ admission, infer kernel/section references or establish normal-close readiness.
 Malformed/cross-correlated replies retain original custody without replay, as
 with the existing control operations. See the [reference observation record](../../core/docs/issues/352/WINDOWS-NATIVE-REFERENCES-2026-11-03.md).
 
+### Native cache-reference close coordination
+
+An explicit unmount fences complete ordinary WinFsp callbacks, while original
+Cleanup/Close callbacks remain admitted. Under the original Session lock, close
+coordination accepts only cleaned, named, read-only file owners with no attribute
+write or delete access, no pending Commit/capture/retained outcome and, for clean
+close, no unpublished frontier or pending base change. Before-effect refusals
+restore ordinary callback admission; no caller descriptor or mapping is closed.
+
+The native host takes one indexed, serial/name-validated candidate at a time and
+requests one WinFsp cache invalidation with zero notification Filter/Action. This
+reports no synthetic filesystem change, does not reopen/read a file, change token
+or ACL, or access Mount Manager. Invalidation submission is asynchronous and is
+not a release receipt. Only original Close removes the Session's file owner.
+The host observes original handle/request counts and whole callback completion
+within a fixed 10-second readiness window. It never repeats an invalidation.
+If an active view or other owner remains, the transaction returns Busy, releases
+only its coordination admission and keeps the filesystem serving. A later explicit
+request after the caller releases its original view is a new operation, not an
+automatic retry. Lost/unknown protocol outcomes retain custody without recovery.
+
+Only zero actual owners/requests and completed callbacks permit the original
+clean/discard prepare, native stop/join/detach, product finish and process receipt.
+This covers the pinned minimal Git object workload and read-only-view refusal,
+not arbitrary kernel references, writable mappings, forced teardown or the prior
+full Git workload. See the [coordinated-close evidence](../../core/docs/issues/352/WINDOWS-NATIVE-CLOSE-2026-11-03.md).
+
 Only a correctly correlated terminal acknowledgement **and** the original parent
 process's successful close resolve `unmount()`. The result includes string command
 `id`, `nativeExit`, raw `dispatcherExit`, `overlayClosed`,

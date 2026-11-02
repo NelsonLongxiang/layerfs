@@ -149,22 +149,7 @@ impl State {
         // The Session lock serializes Commit admission; no JS status probe can
         // replace this before-effect decision. Dirty leaves ordinary service live.
         if clean {
-            let state = self.frontier()?;
-            if state.dirty_inodes != 0
-                || state.dirty_directory_entries != 0
-                || state.base_root
-                    != *self
-                        .bound
-                        .snapshot()
-                        .map_err(workspace_error)?
-                        .effective_root
-                        .as_bytes()
-            {
-                return Err(refused(
-                    STATUS_DIRTY,
-                    "uncommitted published changes; explicit discard required",
-                ));
-            }
+            self.require_clean_close()?;
         }
         self.requests.try_stop_receive().map_err(|e| match e {
             layerfs_fuse::DispatchError::Busy => {
@@ -173,6 +158,25 @@ impl State {
             _ => failed(e),
         })?;
         self.closing = true;
+        Ok(())
+    }
+    pub(super) fn require_clean_close(&self) -> Result<()> {
+        let state = self.frontier()?;
+        if state.dirty_inodes != 0
+            || state.dirty_directory_entries != 0
+            || state.base_root
+                != *self
+                    .bound
+                    .snapshot()
+                    .map_err(workspace_error)?
+                    .effective_root
+                    .as_bytes()
+        {
+            return Err(refused(
+                STATUS_DIRTY,
+                "uncommitted published changes; explicit discard required",
+            ));
+        }
         Ok(())
     }
     pub(super) fn finish_after_native_drain(&mut self) -> Result<()> {

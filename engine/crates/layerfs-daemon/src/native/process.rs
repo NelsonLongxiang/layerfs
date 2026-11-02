@@ -358,6 +358,41 @@ fn run() -> io::Result<()> {
             }
             match request.opcode {
                 1..=16 => serve_callback(&shared, &lane, request)?,
+                22..=25 => {
+                    if finished || !served {
+                        return Err(io::Error::other("native close transaction state"));
+                    }
+                    let clean = shared
+                        .unmount
+                        .lock()
+                        .map_err(|_| io::Error::other("unmount state poisoned"))?
+                        .as_ref()
+                        .ok_or_else(|| {
+                            io::Error::other("close transaction without original unmount")
+                        })?
+                        .clean;
+                    let answer = {
+                        let mut s = shared
+                            .session
+                            .lock()
+                            .map_err(|_| io::Error::other("Session poisoned"))?;
+                        super::close_port::dispatch(
+                            s.as_mut()
+                                .ok_or_else(|| io::Error::other("Session closed"))?,
+                            clean,
+                            request.opcode,
+                            &request.bytes,
+                        )
+                    };
+                    let (status, body) = match answer {
+                        Ok(body) => (0, body),
+                        Err(e) => (e.status, Vec::new()),
+                    };
+                    reply(&shared, &request, status, body)?;
+                    if status == 0xc0000001u32 as i32 {
+                        return Err(io::Error::other("native close transaction retained"));
+                    }
+                }
                 20 | 21 => {
                     let end = request.opcode == 21;
                     if !request.bytes.is_empty()

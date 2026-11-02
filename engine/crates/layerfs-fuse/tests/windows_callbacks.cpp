@@ -149,11 +149,13 @@ int wmain(int argc, wchar_t **argv) {
   ++passed;
   {
     layerfs::WorkspaceCallbacks a(port, provider, {1024, 512, L"LayerFS"});
-    if (!check(a.try_stop_callbacks() == STATUS_SUCCESS &&
-                   a.try_stop_callbacks() == STATUS_INVALID_DEVICE_STATE &&
-                   a.resume_callbacks() == STATUS_SUCCESS &&
-                   a.resume_callbacks() == STATUS_INVALID_DEVICE_STATE,
-               "idle callback fence and resume are explicit once-only steps"))
+    if (!check(
+            !a.callbacks_idle() && a.try_stop_callbacks() == STATUS_SUCCESS &&
+                a.callbacks_idle() &&
+                a.try_stop_callbacks() == STATUS_INVALID_DEVICE_STATE &&
+                a.resume_callbacks() == STATUS_SUCCESS && !a.callbacks_idle() &&
+                a.resume_callbacks() == STATUS_INVALID_DEVICE_STATE,
+            "idle callback fence and resume are explicit once-only steps"))
       return 1;
   }
   ++passed;

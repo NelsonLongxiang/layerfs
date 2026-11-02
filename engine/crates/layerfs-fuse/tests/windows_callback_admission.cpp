@@ -149,12 +149,13 @@ int wmain(int argc, wchar_t **argv) {
   arm(layerfs::CallbackKind::Close);
   std::thread closer([&] { CloseHandle(held); });
   const bool close_seen = wait_entered();
+  const bool whole_close_active = !adapter.callbacks_idle();
   const auto resumed =
       close_seen ? adapter.resume_callbacks() : STATUS_UNSUCCESSFUL;
   release();
   closer.join();
-  if (!close_seen || resumed != STATUS_SUCCESS ||
-      adapter.callback_failure() < 0) {
+  if (!close_seen || !whole_close_active || adapter.callbacks_idle() ||
+      resumed != STATUS_SUCCESS || adapter.callback_failure() < 0) {
     fprintf(stderr,
             "CALLBACK_GATE_FAIL release callback resume seen=%u status=%08lx "
             "failure=%08lx\n",

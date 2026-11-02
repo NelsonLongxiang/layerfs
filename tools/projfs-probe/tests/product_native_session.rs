@@ -265,3 +265,79 @@ fn product_reference_observation_tracks_hints_without_pinning_namespace_or_owner
     assert!(s.reference(0, 0).unwrap().is_none());
     finish(&mut s);
 }
+
+#[test]
+fn product_coordination_preserves_busy_rights_and_original_name_identity() {
+    let (_root, _fixture, mut s) = start("coordination-rights");
+    for access in [1, 2, 4] {
+        let (held, _) = s.open_windows("/alpha.txt", access).unwrap();
+        s.cleanup_file(held).unwrap();
+        let before = s.close_state();
+        assert_eq!(
+            s.begin_close_coordination().unwrap_err().status as u32,
+            0x80000011
+        );
+        assert_eq!(s.close_state(), before);
+        s.close_file(held).unwrap();
+    }
+    let (directory, _) = s.open("/many", false).unwrap();
+    s.cleanup_file(directory).unwrap();
+    assert_eq!(
+        s.begin_close_coordination().unwrap_err().status as u32,
+        0x80000011
+    );
+    s.close_file(directory).unwrap();
+    let (held, _) = s.open("/alpha.txt", false).unwrap();
+    assert_eq!(
+        s.begin_close_coordination().unwrap_err().status as u32,
+        0x80000011
+    );
+    s.cleanup_file(held).unwrap();
+    let (other, _) = s.create_file("/replacement").unwrap();
+    s.close_file(other).unwrap();
+    s.rename("/replacement", "/alpha.txt", true).unwrap();
+    assert_eq!(
+        s.begin_close_coordination().unwrap_err().status as u32,
+        0x80000011
+    );
+    assert_eq!(s.read(held, 0, 3).unwrap(), b"old");
+    s.close_file(held).unwrap();
+    finish(&mut s);
+}
+#[test]
+fn product_coordination_is_reversible_and_close_remains_the_release_authority() {
+    let (_root, _fixture, mut s) = start("coordination-close");
+    let (held, stat) = s.open("/alpha.txt", false).unwrap();
+    s.cleanup_file(held).unwrap();
+    let frontier = s.frontier().unwrap();
+    let token = s.begin_close_coordination().unwrap();
+    assert!(s.status().unwrap().coordinating);
+    assert_eq!(
+        s.next_close_candidate(token, 0).unwrap(),
+        Some((held, stat.serial, "/alpha.txt".into()))
+    );
+    assert_eq!(
+        s.rename("/alpha.txt", "/changed", false)
+            .unwrap_err()
+            .status as u32,
+        0x80000011
+    );
+    assert_eq!(
+        s.begin_commit(CommitScope::Published).err().unwrap().status as u32,
+        0x80000011
+    );
+    assert!(s.next_close_candidate(token + 1, 0).is_err());
+    assert!(s.end_close_coordination(token + 1, false).is_err());
+    assert_eq!(
+        s.end_close_coordination(token, true).unwrap_err().status as u32,
+        0x80000011
+    );
+    assert!(!s.status().unwrap().coordinating);
+    assert_eq!(s.read(held, 0, 3).unwrap(), b"old");
+    assert_eq!(s.frontier().unwrap(), frontier);
+    let token = s.begin_close_coordination().unwrap();
+    s.close_file(held).unwrap();
+    assert!(s.next_close_candidate(token, 0).unwrap().is_none());
+    s.end_close_coordination(token, true).unwrap();
+    s.finish_after_native_drain().unwrap();
+}

@@ -164,6 +164,11 @@ NTSTATUS WorkspaceCallbacks::resume_callbacks() {
   s.stopped = false;
   return STATUS_SUCCESS;
 }
+bool WorkspaceCallbacks::callbacks_idle() const {
+  auto &s = *state_;
+  std::lock_guard<std::mutex> lock(s.admission);
+  return s.stopped && s.active_callbacks == 0 && s.failure.load() >= 0;
+}
 NTSTATUS WorkspaceCallbacks::callback_failure() const {
   return state_->failure.load();
 }
