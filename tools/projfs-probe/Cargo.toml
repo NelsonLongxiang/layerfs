@@ -23,4 +23,9 @@ layerfs-project = { path = "../../engine/crates/layerfs-project" }
 layerfs-store-service = { path = "../../engine/crates/layerfs-store-service" }
 layerfs-overlay = { path = "../../engine/crates/layerfs-overlay" }
 layerfs-workspace = { path = "../../engine/crates/layerfs-workspace" }
+layerfs-fuse = { path = "../../engine/crates/layerfs-fuse" }
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_ProjectedFileSystem", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_System_Memory", "Win32_System_IO", "Win32_Security"] }
+
+# Match the product workspace's owner-authorized fuser source; not used on Windows.
+[patch.crates-io]
+fuser = { version = "=0.18.0", path = "../../engine/vendor/fuser-0.18.0" }

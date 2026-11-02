@@ -611,3 +611,25 @@ and unreferenced serial rejection with a healthy sibling Workspace. These tests 
 real StoreService/Overlay public ports, not Session, with the existing synthetic
 Store fixture. No SDK Unsupported branch or product dependency on tools is removed.
 See the [product Open result](../../core/docs/issues/352/WINDOWS-PRODUCT-OPEN-2026-11-02.md).
+
+## Product callback admission and drain
+
+Workspace filesystem ABI callbacks now enter the product MountRequests lane before
+waiting on the Session mutex and execute with RequestOwner::serve_sync. Definite
+refusals are completed requests, unknown errors are retained and panic payloads stay
+with the lane. Control calls remain separate: preparation cannot count itself as
+an active callback. The ABI borrows host-owned buffers rather than copying a product
+input frame, so request(0) claims no copied bytes; per-operation windows are still
+validated. Native C++ callbacks which do not enter this ABI remain owned by WinFsp.
+
+Session::prepare_close also requires an atomic idle-stop of this lane. A received
+but not yet executed callback makes it Busy without fencing ordinary receives.
+After host dispatcher drain/detach, Session::finish requires the lane's terminal,
+active=0, retained=0 state, records NATIVE_REQUESTS_DRAINED with real receive/complete
+counts, then revokes its logical mount and closes Overlay. These counts do not
+replace operating-system drain or arbitrary mapped-section ownership evidence.
+
+The consumer now directly depends on existing product layerfs-fuse. Its separate
+lock resolves Linux-only fuser through the same authorized source pin as the root;
+registry package versions match the root lock. No dependency source is modified.
+See the [request lifecycle result](../../core/docs/issues/352/WINDOWS-NATIVE-REQUESTS-2026-11-02.md).

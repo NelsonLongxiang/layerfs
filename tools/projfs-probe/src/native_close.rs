@@ -11,6 +11,10 @@ pub struct CloseState {
     pub prepared: u32,
 }
 impl Session {
+    /// One product request lane; this observes no operating-system mount state.
+    pub fn requests(&self) -> layerfs_fuse::MountRequests {
+        self.requests.clone()
+    }
     pub(super) fn accepting(&self) -> Result<()> {
         if self.retained_lookup.is_some() || self.retained_open.is_some() {
             return Err(failed(
@@ -44,7 +48,8 @@ impl Session {
                     || self.retained_success.is_some()
                     || !self.retained_completions.is_empty()
                     || self.retained_lookup.is_some()
-                    || self.retained_open.is_some(),
+                    || self.retained_open.is_some()
+                    || self.requests.work().map_or(true, |work| work.retained != 0),
             ),
             prepared: u32::from(self.closing),
         }
@@ -75,6 +80,14 @@ impl Session {
                 "native file/directory references still owned until Close",
             ));
         }
+        self.requests
+            .try_stop_receive()
+            .map_err(|error| match error {
+                layerfs_fuse::DispatchError::Busy => {
+                    refused(0x80000011, "native callbacks still active or retained")
+                }
+                _ => failed(error),
+            })?;
         self.closing = true;
         println!("NORMAL_CLOSE_PREPARED tracked_references=0 commit=false capture=false admission_fenced=true");
         Ok(())

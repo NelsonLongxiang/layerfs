@@ -116,3 +116,74 @@ fn write_delete_directory_and_commit_custody_refuse_before_coordination() {
     s.end_close_coordination(token, true).unwrap();
     s.finish().unwrap();
 }
+#[test]
+fn received_callback_prevents_close_until_its_original_disposition_finishes() {
+    let mut s = Session::create(&root("requests")).unwrap();
+    let requests = s.requests();
+    let request = requests.receive().unwrap().request(0).unwrap();
+    let frontier = s.frontier().unwrap();
+    let before = requests.work().unwrap();
+    busy(s.prepare_close());
+    assert_eq!(s.frontier().unwrap(), frontier);
+    assert_eq!(s.close_state().prepared, 0);
+    assert_eq!(requests.work().unwrap(), before);
+    requests
+        .receive()
+        .unwrap()
+        .request(0)
+        .unwrap()
+        .serve_sync(|| {
+            let (h, _) = s.open("/alpha.txt", false).unwrap();
+            assert_eq!(s.read(h, 0, 3).unwrap(), b"old");
+            s.close_file(h).unwrap();
+            layerfs_fuse::RequestDisposition::Complete
+        })
+        .unwrap();
+    request
+        .serve_sync(|| layerfs_fuse::RequestDisposition::Complete)
+        .unwrap();
+    s.prepare_close().unwrap();
+    assert!(matches!(
+        requests.receive(),
+        Err(layerfs_fuse::DispatchError::Stopped)
+    ));
+    assert_eq!(requests.work().unwrap().completed, 2);
+    s.finish().unwrap();
+    assert!(matches!(
+        requests.receive(),
+        Err(layerfs_fuse::DispatchError::Stale)
+    ));
+}
+
+#[test]
+fn retained_native_callback_is_not_silently_disposed_by_normal_close() {
+    let mut s = Session::create(&root("request-retained")).unwrap();
+    let requests = s.requests();
+    requests
+        .receive()
+        .unwrap()
+        .request(0)
+        .unwrap()
+        .serve_sync(|| {
+            layerfs_fuse::RequestDisposition::Retained(Box::new(std::io::Error::other(
+                "original native request failure",
+            )))
+        })
+        .unwrap();
+    assert_eq!(s.close_state().retained, 1);
+    assert!(s.prepare_close().is_err());
+    assert!(s.finish().is_err());
+    assert_eq!(s.close_state().prepared, 0);
+    assert!(matches!(
+        requests.receive(),
+        Err(layerfs_fuse::DispatchError::Stopped)
+    ));
+    requests
+        .inspect_failure(0, |failure| match failure {
+            layerfs_fuse::FailureView::Request(error) => {
+                assert_eq!(error.to_string(), "original native request failure")
+            }
+            _ => panic!("lost original request failure"),
+        })
+        .unwrap();
+}

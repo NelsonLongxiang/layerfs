@@ -9,39 +9,111 @@ use std::{
     },
 };
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
+static REQUESTS: Mutex<Option<layerfs_fuse::MountRequests>> = Mutex::new(None);
 static RETAINED: AtomicBool = AtomicBool::new(false);
+fn install(slot: &mut Option<Session>, session: Session) -> Result<(), Error> {
+    let requests = session.requests();
+    *slot = Some(session);
+    *REQUESTS
+        .lock()
+        .map_err(|_| failed("request registry poisoned; Session retained"))? = Some(requests);
+    Ok(())
+}
+fn invoke(action: impl FnOnce(&mut Session) -> Result<(), Error>) -> Result<(), Error> {
+    // Session bookkeeping is short; Commit construction is still run outside it.
+    let mut state = SESSION
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| failed("bridge poisoned; retained"))?;
+    if RETAINED.load(Ordering::Acquire) {
+        return Err(failed("prior unknown outcome retained; no further calls"));
+    }
+    let answer = action(state.as_mut().ok_or_else(|| failed("bridge not started"))?);
+    if answer
+        .as_ref()
+        .is_err_and(|e| e.status == 0xc0000001u32 as i32)
+    {
+        RETAINED.store(true, Ordering::Release);
+    }
+    answer
+}
+// Short control operations do not represent native filesystem callbacks. In
+// particular, terminal preparation must not count itself as an active callback.
 fn call(action: impl FnOnce(&mut Session) -> Result<(), Error>) -> i32 {
-    // Ordinary callbacks and short control bookkeeping serialize here, never
-    // the captured Commit construction/Save/publication. Product SQL locks stay short.
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let mut state = SESSION
-            .get_or_init(|| Mutex::new(None))
-            .lock()
-            .map_err(|_| failed("bridge poisoned; retained"))?;
-        if RETAINED.load(Ordering::Acquire) {
-            return Err(failed("prior unknown outcome retained; no further calls"));
-        }
-        let answer = action(state.as_mut().ok_or_else(|| failed("bridge not started"))?);
-        if answer
-            .as_ref()
-            .is_err_and(|e| e.status == 0xc0000001u32 as i32)
-        {
-            RETAINED.store(true, Ordering::Release);
-        }
-        answer
-    }));
-    match result {
+    match catch_unwind(AssertUnwindSafe(|| invoke(action))) {
         Ok(Ok(())) => 0,
         Ok(Err(e)) => {
             eprintln!("OVERLAY_REFUSAL {:08x}: {}", e.status as u32, e.detail);
             e.status
         }
-        Err(_) => {
+        Err(payload) => {
             RETAINED.store(true, Ordering::Release);
+            // Preserve the original control panic, as well as the poisoned Session.
+            std::mem::forget(payload);
             eprintln!("OVERLAY_PANIC retained; no replay");
             0xc0000001u32 as i32
         }
     }
+}
+fn callback(action: impl FnOnce(&mut Session) -> Result<(), Error>) -> i32 {
+    let admission = (|| {
+        let requests = REQUESTS
+            .lock()
+            .map_err(|_| failed("request registry poisoned"))?
+            .clone()
+            .ok_or_else(|| failed("native request lane not installed"))?;
+        let received = requests.receive().map_err(|error| match error {
+            layerfs_fuse::DispatchError::Stopped | layerfs_fuse::DispatchError::Stale => {
+                crate::native_overlay::refused(0xc0000128, "native callback admission stopped")
+            }
+            _ => failed(error),
+        })?;
+        // No copied request frame is owned here; the ABI callback validates its
+        // caller-owned spans and data windows. The product lane owns lifetime.
+        received
+            .request(0)
+            .map_err(|failure| failed(failure.reason))
+    })();
+    let request = match admission {
+        Ok(request) => request,
+        Err(e) => {
+            if e.status == 0xc0000001u32 as i32 {
+                RETAINED.store(true, Ordering::Release);
+            }
+            eprintln!(
+                "NATIVE_CALLBACK_REFUSED {:08x}: {}",
+                e.status as u32, e.detail
+            );
+            return e.status;
+        }
+    };
+    let mut status = 0xc0000001u32 as i32;
+    let mut returned = false;
+    let answer = request.serve_sync(|| {
+        let disposition = match invoke(action) {
+            Ok(()) => {
+                status = 0;
+                layerfs_fuse::RequestDisposition::Complete
+            }
+            Err(e) => {
+                status = e.status;
+                eprintln!("OVERLAY_REFUSAL {:08x}: {}", e.status as u32, e.detail);
+                if status == 0xc0000001u32 as i32 {
+                    layerfs_fuse::RequestDisposition::Retained(Box::new(e))
+                } else {
+                    layerfs_fuse::RequestDisposition::Complete
+                }
+            }
+        };
+        returned = true;
+        disposition
+    });
+    if !returned || answer.is_err() {
+        RETAINED.store(true, Ordering::Release);
+        eprintln!("NATIVE_CALLBACK_PANIC_OR_DRAIN_FAILURE retained; no replay");
+        return 0xc0000001u32 as i32;
+    }
+    status
 }
 unsafe fn text(ptr: *const u16, len: u32) -> Result<String, Error> {
     if ptr.is_null() || len == 0 || len > 32768 {
@@ -73,7 +145,7 @@ pub unsafe extern "C" fn lf_start(ptr: *const u16, len: u32) -> i32 {
         if slot.is_some() {
             return Err(failed("already started"));
         }
-        *slot = Some(Session::create(&root)?);
+        install(&mut slot, Session::create(&root)?)?;
         Ok::<_, Error>(())
     }));
     match result {
@@ -103,7 +175,7 @@ pub unsafe extern "C" fn lf_reopen(
         if slot.is_some() || RETAINED.load(Ordering::Acquire) {
             return Err(failed("session already present or retained"));
         }
-        *slot = Some(Session::reopen(Path::new(&store), &work)?);
+        install(&mut slot, Session::reopen(Path::new(&store), &work)?)?;
         Ok::<_, Error>(())
     }));
     match result {
@@ -134,7 +206,10 @@ pub unsafe extern "C" fn lf_bind_stdin(
         if slot.is_some() || RETAINED.load(Ordering::Acquire) {
             return Err(failed("session already present or retained"));
         }
-        *slot = Some(Session::bind_existing(Path::new(&store), &work, binding)?);
+        install(
+            &mut slot,
+            Session::bind_existing(Path::new(&store), &work, binding)?,
+        )?;
         Ok::<_, Error>(())
     }));
     match result {
@@ -148,7 +223,7 @@ pub unsafe extern "C" fn lf_bind_stdin(
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_stat(ptr: *const u16, len: u32, out: *mut Stat) -> i32 {
-    call(|s| unsafe { put(out, s.stat_path(&path(ptr, len)?)?) })
+    callback(|s| unsafe { put(out, s.stat_path(&path(ptr, len)?)?) })
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_open(
@@ -159,7 +234,7 @@ pub unsafe extern "C" fn lf_open(
     handle: *mut u64,
     out: *mut Stat,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if handle.is_null() || out.is_null() {
             return Err(failed("null open outputs"));
         }
@@ -191,7 +266,7 @@ pub unsafe extern "C" fn lf_create(
     handle: *mut u64,
     out: *mut Stat,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if handle.is_null() || out.is_null() {
             return Err(failed("null create output"));
         }
@@ -209,7 +284,7 @@ pub unsafe extern "C" fn lf_create(
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_info(handle: u64, out: *mut Stat) -> i32 {
-    call(|s| unsafe { put(out, s.stat_handle(handle)?) })
+    callback(|s| unsafe { put(out, s.stat_handle(handle)?) })
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_read(
@@ -219,7 +294,7 @@ pub unsafe extern "C" fn lf_read(
     length: u32,
     count: *mut u32,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if out.is_null() || count.is_null() {
             return Err(failed("null read output"));
         }
@@ -243,7 +318,7 @@ pub unsafe extern "C" fn lf_write(
     flags: u32,
     out: *mut Stat,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if data.is_null() || out.is_null() || length as usize > layerfs_overlay::WRITE_WINDOW {
             return Err(failed("invalid write buffer/window"));
         }
@@ -263,7 +338,7 @@ pub unsafe extern "C" fn lf_basic_info(
     change: u64,
     out: *mut Stat,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if out.is_null() {
             return Err(failed("null basic info output"));
         }
@@ -278,7 +353,7 @@ pub unsafe extern "C" fn lf_overwrite(
     replace: u32,
     out: *mut Stat,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if out.is_null() {
             return Err(failed("null overwrite output"));
         }
@@ -288,7 +363,7 @@ pub unsafe extern "C" fn lf_overwrite(
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_resize(handle: u64, size: u64, out: *mut Stat) -> i32 {
-    call(|s| unsafe { put(out, s.resize(handle, size)?) })
+    callback(|s| unsafe { put(out, s.resize(handle, size)?) })
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_rename(
@@ -298,7 +373,7 @@ pub unsafe extern "C" fn lf_rename(
     tlen: u32,
     replace: u32,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         s.rename(
             &unsafe { path(from, flen) }?,
             &unsafe { path(to, tlen) }?,
@@ -308,7 +383,7 @@ pub unsafe extern "C" fn lf_rename(
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_dot(handle: u64, parent: u32, found: *mut u32, out: *mut Stat) -> i32 {
-    call(|s| {
+    callback(|s| {
         if found.is_null() || out.is_null() {
             return Err(failed("null dot output"));
         }
@@ -323,15 +398,15 @@ pub unsafe extern "C" fn lf_dot(handle: u64, parent: u32, found: *mut u32, out: 
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_can_delete(ptr: *const u16, len: u32) -> i32 {
-    call(|s| s.can_delete(&unsafe { path(ptr, len) }?))
+    callback(|s| s.can_delete(&unsafe { path(ptr, len) }?))
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_unlink(ptr: *const u16, len: u32) -> i32 {
-    call(|s| s.unlink(&unsafe { path(ptr, len) }?))
+    callback(|s| s.unlink(&unsafe { path(ptr, len) }?))
 }
 #[no_mangle]
 pub extern "C" fn lf_close(handle: u64) -> i32 {
-    call(|s| s.close_file(handle))
+    callback(|s| s.close_file(handle))
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_next(
@@ -343,7 +418,7 @@ pub unsafe extern "C" fn lf_next(
     length: *mut u32,
     out: *mut Stat,
 ) -> i32 {
-    call(|s| {
+    callback(|s| {
         if name.is_null() || length.is_null() || out.is_null() {
             return Err(failed("null list output"));
         }
@@ -502,7 +577,7 @@ pub unsafe extern "C" fn lf_close_state(out: *mut CloseState) -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn lf_cleanup(handle: u64) -> i32 {
-    call(|s| s.cleanup_file(handle))
+    callback(|s| s.cleanup_file(handle))
 }
 #[no_mangle]
 pub unsafe extern "C" fn lf_coordinate_begin(token: *mut u64) -> i32 {

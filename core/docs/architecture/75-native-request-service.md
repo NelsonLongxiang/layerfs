@@ -2,6 +2,42 @@
 
 > **Status:** Current general guide.
 
+## Synchronous native callbacks and terminal admission (2026-11-02)
+
+The product [MountRequests](../../../engine/crates/layerfs-fuse/src/dispatch/requests.rs)
+now serves both future-driven requests and synchronous native callbacks on their
+receiving thread. RequestOwner::serve_sync records completion, retains the original
+request error, or retains its caught panic payload. A synchronous action must keep
+its borrowed native inputs alive for the call; any error must carry custody of its
+failed/unknown effects. The future route still retains the original future on panic.
+Completed future disposal happens while the request owner is still active: the
+shared disposition recorder borrows, rather than consumes, that owner. Otherwise
+a destructor holding a consumer could observe an already-idle request lane.
+
+MountRequests::try_stop_receive atomically checks active/retained ownership and
+fences later receives under the same state mutex. Busy changes no admission state;
+a later explicit operation can try again after its owners end. A finished lane is
+Stale and a previously stopped lane is Stopped. This operation does not stop the
+service fence, detach a filesystem, count arbitrary kernel sections or prove Ready.
+The existing forced and async stop paths retain their separate behavior.
+
+The Windows diagnostic publishes its Session's product request lane before starting
+native service. Filesystem ABI callbacks acquire a receive owner before waiting on
+the Session mutex. Known refusals finish their requests; unknown results retain the
+original error, and panics retain the original payload and Session's poisoned state.
+Diagnostic control calls are separate, so close preparation does not count itself.
+It checks adapter file/capture/Commit custody, then performs the atomic idle-stop.
+After native host dispatcher stop, unmount and destruction, Session::finish checks
+product request finish, records NATIVE_REQUESTS_DRAINED, then revokes the logical
+KernelMount and closes the bound Overlay/Store reader. Zero request count alone is
+not an OS-drain or kernel-unmount receipt. C++ callbacks with no Workspace ABI call
+remain native dispatcher-owned; this lane measures the Workspace ABI callbacks.
+
+This is actual reuse by WinFsp diagnostic consumers, not a product Windows mount
+owner or SDK Workspace integration. The diagnostic adds an existing first-party
+layerfs-fuse dependency and pins its Linux-only fuser transitive resolution to the
+same owner-authorized source as the root workspace; no vendor source is changed.
+
 R7 update, 2026-10-09 (cleanup): the ports `source`, `view`, `immutable`,
 `observe`, `release_source`, `open_source`, `prepare`, `mutate` and `replied`
 named below no longer exist; every request is served through

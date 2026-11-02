@@ -15,7 +15,7 @@ enum Failure {
     Request(Box<dyn std::error::Error + Send + Sync>),
     Panic {
         payload: Box<dyn Any + Send>,
-        _future: RequestFuture,
+        _future: Option<RequestFuture>,
     },
 }
 struct State {
@@ -107,6 +107,30 @@ impl MountRequests {
     }
     pub fn fence(&self) -> Fence {
         self.shared.fence.clone()
+    }
+    /// Atomically fences later receives only when this mount has no active or
+    /// retained request. Busy changes nothing and leaves ordinary receive usable.
+    /// This is request admission, not an OS unmount or proof of absent mappings.
+    pub fn try_stop_receive(&self) -> Result<MountWork, DispatchError> {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .map_err(|_| DispatchError::Failed)?;
+        if state.finished {
+            return Err(DispatchError::Stale);
+        }
+        if state.work.active != 0 || state.work.retained != 0 {
+            return Err(DispatchError::Busy);
+        }
+        if state.work.terminal {
+            return Err(DispatchError::Stopped);
+        }
+        state.work.terminal = true;
+        let work = state.work;
+        drop(state);
+        self.shared.changed.notify_all();
+        Ok(work)
     }
     pub fn stop_receive(&self) -> Result<(), DispatchError> {
         self.shared
@@ -227,9 +251,32 @@ impl RequestOwner {
             Ok(RequestDisposition::Retained(error)) => Some(Failure::Request(error)),
             Err(payload) => Some(Failure::Panic {
                 payload,
-                _future: future,
+                _future: Some(future),
             }),
         };
+        self.record(failure)
+    }
+    /// Runs a synchronous native callback on its receiving thread. Retains the
+    /// exact request failure or panic payload; no async executor or replay.
+    /// The callback's inputs must outlive this call and retained errors must
+    /// carry the custody of any failed/unknown effect, as on the future route.
+    pub fn serve_sync(
+        self,
+        action: impl FnOnce() -> RequestDisposition,
+    ) -> Result<(), DispatchError> {
+        let failure = match catch_unwind(AssertUnwindSafe(action)) {
+            Ok(RequestDisposition::Complete) => None,
+            Ok(RequestDisposition::Retained(error)) => Some(Failure::Request(error)),
+            Err(payload) => Some(Failure::Panic {
+                payload,
+                _future: None,
+            }),
+        };
+        self.record(failure)
+    }
+    // Borrow the owner: the original request remains active through disposal of
+    // the completed future in serve, not merely through recording its result.
+    fn record(&self, failure: Option<Failure>) -> Result<(), DispatchError> {
         let shared = &self.received.mount.shared;
         let mut state = shared.state.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(failure) = failure {

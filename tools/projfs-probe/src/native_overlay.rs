@@ -142,6 +142,7 @@ pub struct Session {
     service: Option<StoreService>,
     bound: Arc<BoundWorkspace>,
     mount: KernelMount,
+    requests: layerfs_fuse::MountRequests,
     root: u64,
     next: u64,
     handles: BTreeMap<u64, Handle>,
@@ -230,6 +231,7 @@ impl Session {
             service: Some(service),
             bound,
             mount,
+            requests: layerfs_fuse::MountRequests::new(mount),
             root,
             next: 100,
             handles: BTreeMap::new(),
@@ -895,6 +897,12 @@ impl Session {
             ));
         }
         self.finish_started = true;
+        self.requests.finish().map_err(failed)?;
+        let work = self.requests.work().map_err(failed)?;
+        println!(
+            "NATIVE_REQUESTS_DRAINED active={} retained={} requests={} completed={} terminal={}",
+            work.active, work.retained, work.requests, work.completed, work.terminal
+        );
         self.observe()?;
         let op = self.bound.operation().map_err(workspace_error)?;
         op.overlay()
