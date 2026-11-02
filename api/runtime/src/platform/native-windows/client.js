@@ -11,7 +11,6 @@ export class NativeClientRoute {
   #owner;
   #selection;
   #sandbox;
-  #client;
   constructor(runtime, original, owner, selection, sandbox) {
     this.#runtime = runtime; this.#original = original; this.#owner = owner;
     this.#selection = selection; this.#sandbox = sandbox;
@@ -20,8 +19,10 @@ export class NativeClientRoute {
     live(client);
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some((k) => k !== "commitScope") || options.commitScope !== "published") throw new LayerFSError("InvalidInput", "native SDK registration requires { commitScope: \"published\" }; no implicit mapping capture", null);
     this.#scope({ project: client.projectName, home: client.options.home, storePath: client.options.storePath });
-    this.#client = client;
-    bindClientControl(client, { call: (op, args) => this.#call(op, args), backendCall: (op, args) => this.#backend(op, args) });
+    // The client travels with each control binding: one original instance can be
+    // registered on several independent clients, and a shared route must never
+    // remember whichever attached last.
+    bindClientControl(client, { call: (op, args) => this.#call(client, op, args), backendCall: (op, args) => this.#backend(client, op, args) });
     return Object.freeze({ sandbox: this.#sandbox, image: null, mode });
   }
   #scope(args) {
@@ -45,9 +46,9 @@ export class NativeClientRoute {
   // Status reads no Store itself: the client's own binding supplies the current
   // head separately, exactly as the daemon binding does. An unavailable read
   // stays unobserved (null) rather than being guessed from the bound base.
-  async #head(session, base) {
+  async #head(client, session, base) {
     try {
-      const page = await this.#client.branch.list_commits(session.branch, 1, 0);
+      const page = await client.branch.list_commits(session.branch, 1, 0);
       const head = Array.isArray(page?.items) && page.items.length ? page.items[0].id : null;
       if (head !== null || base === null) return { head, moved: head !== base };
       return null; // A Branch with a bound base has a head; an empty answer is not evidence.
@@ -61,7 +62,7 @@ export class NativeClientRoute {
       overlay: { inodes: state.dirtyInodes, entries: state.dirtyEntries, pendingMerge: state.pendingMerge },
       native: state };
   }
-  async #call(op, args) {
+  async #call(client, op, args) {
     this.#scope(args);
     if (op === "project.list_sandboxes") {
       if (this.#owner.observation().state === "closed") return { value: { items: [] } };
@@ -99,7 +100,7 @@ export class NativeClientRoute {
       const workspaces = [];
       for (const session of this.#owner.workspaces()) {
         if (session.observation().state === "closed") continue; // Command completion may still hold the owner, not a mount.
-        const state = await session.handle().state(), observed = await this.#head(session, state.head);
+        const state = await session.handle().state(), observed = await this.#head(client, session, state.head);
         workspaces.push({ mounted: true, directory: session.path, workspace: state.workspace, branch: session.branch, base: state.head,
           activity: state.prepared ? "closing" : state.pendingCommit || state.active > 0n ? "committing" : "idle",
           dirty: { inodes: state.dirtyInodes, entries: state.dirtyEntries }, headMovedSinceMount: observed ? observed.moved : null, pendingMerge: state.pendingMerge, mode });
@@ -114,12 +115,12 @@ export class NativeClientRoute {
     }
     throw new LayerFSError("Unsupported", "this native SDK registration serves mount/status/Published Commit/normal unmount; Bash Exec and other daemon methods are not implemented", null);
   }
-  async #backend(op, args) {
+  async #backend(client, op, args) {
     this.#scope(args);
     if (op !== "backend.daemon.workspace.status") throw new LayerFSError("Unsupported", "this native SDK registration has no requested daemon read model or process API", null);
     return { value: await this.#use(args, async (session) => {
       const state = await session.handle().state();
-      return this.#value(session, state, await this.#head(session, state.head));
+      return this.#value(session, state, await this.#head(client, session, state.head));
     }) };
   }
 }

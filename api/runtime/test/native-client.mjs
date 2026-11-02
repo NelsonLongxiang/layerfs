@@ -53,6 +53,16 @@ try{
   for(const message of ['Unicode 雪😀\n\t retained','',undefined,'x'.repeat(4096)]){const receipt=await shop.workspace.commit(ws,message);assert.equal(receipt.kind,'Committed');const line=JSON.parse(readFileSync(marker,'utf8')).line;const expected=message===undefined?'none':message===''?'-':Buffer.from(message).toString('hex');assert.ok(line.endsWith(' commit published identity message '+expected+' force false'));}
   const forced=await shop.workspace.commit(ws,'explicit force',true);assert.equal(forced.kind,'Committed');assert.ok(JSON.parse(readFileSync(marker,'utf8')).line.endsWith(' message '+Buffer.from('explicit force').toString('hex')+' force true'));
   await shop.workspace.unmount(ws,true);await shop.sandbox.close(registration.sandbox);await shop.close();shop=undefined;await plain.close();plain=undefined;await runtime.close();events.push({label:'message-forwarded',utf8:true,maximumBytes:4096,invalidBeforeEffect:true,strictForce:true});
+ }else if(selected==='two-clients'){
+  const ws=await shop.workspace.mount(registration.sandbox,'feature');
+  const second=await runtime.native.bindClient(plain,instance,{commitScope:'published'});
+  assert.equal(second.sandbox,registration.sandbox);assert.equal(second.mode,'windows-restricted');
+  // The second registration shares the original instance; neither client owns the route.
+  const seenByPlain=await LayerFSBackend.of(plain).daemon.workspace.status(ws);assert.equal(seenByPlain.mode,'windows-restricted');assert.equal((await plain.sandbox.list_workspaces(registration.sandbox)).items.length,1);
+  await shop.close();shop=undefined;
+  // Closing one client leaves the other's registration, mount and status intact.
+  const afterClose=await LayerFSBackend.of(plain).daemon.workspace.status(ws);assert.equal(afterClose.workspace,seenByPlain.workspace);assert.equal((await plain.sandbox.list_workspaces(registration.sandbox)).items.length,1);
+  await plain.workspace.unmount(ws,true);await plain.sandbox.close(registration.sandbox);await plain.close();plain=undefined;await runtime.close();events.push({label:'two-clients',sharedRoute:true,closeIsolation:true});
  }else if(selected==='mixed'){
   const ws={sandbox:registration.sandbox,path:directBefore.path};
   assert.equal(resolve(directBefore.path),resolve(join(out,'layerfs-'+instance.id+'-1-mount')));

@@ -220,7 +220,12 @@ SDK and direct instance.mount calls resolve the same original Session owners,
 including mounts created before client registration. Direct unmount removes that
 mount from SDK listings; SDK unmount closes the same handle returned directly.
 A client not registered remains on its original route. This registration is
-process-local, not machine discovery or cross-process credentials.
+process-local, not machine discovery or cross-process credentials. One original
+instance may be registered on several independent clients at once: they share its
+owners (the 16-Workspace capacity and pending/retained admissions count once) and
+each may mount, commit or unmount any of its Workspaces. The shared route keeps no
+client; closing one client leaves the others' registrations, mounts, command
+handles and the original instance untouched.
 
 The returned { sandbox, image: null, mode: "windows-restricted" } names this
 instance on those clients. project.list_sandboxes and sandbox.list_workspaces
