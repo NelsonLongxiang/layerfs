@@ -22,4 +22,4 @@
 
 ## 限制
 
-只覆盖“Branch 不存在”这一确定的 before-effect 拒绝。其它绑定失败（catalog／cursor／Store 不可读等）仍走原 Session 的 retained 保管与 `Unknown`，没有被翻译成猜测的错误码。生产 LOC 见提交信息。
+后续提交 814574ebc 把同一收口扩展到受保护的 main（容器契约同样报 NoSuchBranch）与空串／空白／非字符串名字（InvalidInput），同样发生在创建原 target 之前。仍未覆盖的是其它绑定失败（catalog／cursor／Store 不可读等）仍走原 Session 的 retained 保管与 `Unknown`，没有被翻译成猜测的错误码。生产 LOC 见提交信息。
