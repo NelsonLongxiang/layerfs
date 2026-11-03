@@ -662,3 +662,101 @@ pub(crate) fn overwritten(
     items.truncate(limit);
     Ok((items, more))
 }
+
+/// `branch.delete`: removes one Branch row; main and unmerged Branches are
+/// refused. Its Commits and objects stay; no garbage is collected.
+pub fn delete(
+    store: &Arc<Store>,
+    stack: &LayerStackRecord,
+    branch: &layerfs_history::BranchRecord,
+    force: bool,
+) -> Answer {
+    if branch.name.as_str() == MAIN {
+        return Err(invalid("main cannot be deleted"));
+    }
+    let unmerged = unmerged_commits(store, stack, branch)?;
+    let head = branch
+        .head_commit
+        .map_or(SdkValue::Null, |commit| SdkValue::text(hex(commit.as_slice())));
+    if unmerged > 0 && !force {
+        return Err(refuse(
+            "Unmerged",
+            format!(
+                "{} has {} Commit(s) main does not reach; pass force to delete it",
+                branch.name.as_str(),
+                unmerged
+            ),
+            SdkValue::map([
+                ("branch", SdkValue::text(branch.name.as_str())),
+                ("head", head.clone()),
+                (
+                    "unmerged",
+                    SdkValue::Int(i64::try_from(unmerged).unwrap_or(i64::MAX)),
+                ),
+            ]),
+        ));
+    }
+    let removed = store
+        .history()
+        .delete_branch(stack.id, branch.id)
+        .map_err(history)?;
+    if removed == layerfs_history::records::BranchDeleteOutcome::Published {
+        return Err(refuse(
+            "Published",
+            format!(
+                "{} published a Layer that names it as its source; the Store keeps that reference",
+                branch.name.as_str()
+            ),
+            SdkValue::map([
+                ("branch", SdkValue::text(branch.name.as_str())),
+                ("head", head.clone()),
+            ]),
+        ));
+    }
+    Ok(SdkValue::map([
+        ("kind", SdkValue::text("Deleted")),
+        ("branch", SdkValue::text(branch.name.as_str())),
+        ("head", head),
+        (
+            "unmerged",
+            SdkValue::Int(i64::try_from(unmerged).unwrap_or(i64::MAX)),
+        ),
+    ]))
+}
+
+/// Commits on `branch` that main's head does not reach, walking the Branch's
+/// ancestry newest first and stopping at the first Commit main reaches.
+fn unmerged_commits(
+    store: &Arc<Store>,
+    stack: &LayerStackRecord,
+    branch: &layerfs_history::BranchRecord,
+) -> Result<u64, SdkRefusal> {
+    let main = NodeId::Layer(stack.head_layer);
+    let mut cursor = None;
+    let mut unmerged = 0u64;
+    loop {
+        let page = store
+            .history()
+            .commit_history(&CommitHistoryRequest {
+                branch: branch.id,
+                start: branch.head_commit,
+                cursor,
+                limit: MAXIMUM_PAGE_RECORDS,
+            })
+            .map_err(history)?;
+        for record in page.records {
+            if store
+                .history()
+                .is_ancestor(NodeId::Commit(record.id), main)
+                .map_err(history)?
+            {
+                return Ok(unmerged);
+            }
+            unmerged += 1;
+        }
+        match page.continuation {
+            Some(next) => cursor = Some(next),
+            None => return Ok(unmerged),
+        }
+    }
+}

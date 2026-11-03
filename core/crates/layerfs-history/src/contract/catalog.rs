@@ -103,6 +103,19 @@ pub trait HistoryCatalog: Send + Sync {
     /// One coherent Branch snapshot with its resolved roots.
     fn branch_snapshot(&self, id: BranchId) -> HistoryResult<Option<BranchSnapshot>>;
 
+    /// Removes one Branch row from `stack`; its Commits and objects stay.
+    /// `Published` when a published Layer names the Branch as its source (the
+    /// schema keeps that reference), and a provider that cannot remove a
+    /// Branch refuses `Unsupported`; either way nothing changes.
+    fn delete_branch(
+        &self,
+        stack: LayerStackId,
+        branch: BranchId,
+    ) -> HistoryResult<crate::records::BranchDeleteOutcome> {
+        let _ = (stack, branch);
+        Err(crate::error::HistoryError::Unsupported("Branch deletion"))
+    }
+
     /// Branches of one stack in name order.
     fn branches(&self, stack: LayerStackId, page: &Page)
         -> HistoryResult<PageResult<BranchRecord>>;

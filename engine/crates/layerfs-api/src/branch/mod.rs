@@ -1,10 +1,12 @@
 //! Branch methods: history, differences, forks, merges and publication.
+mod delete;
 mod diff_branches;
 mod diff_commits;
 mod fork;
 mod list_commits;
 mod merge;
 mod publish;
+pub use delete::delete;
 pub use diff_branches::diff_branches;
 pub use diff_commits::diff_commits;
 pub use fork::fork;

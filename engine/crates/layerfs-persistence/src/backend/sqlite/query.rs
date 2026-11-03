@@ -50,6 +50,12 @@ pub(crate) fn history(key: &str) -> Result<&'static str, BackendError> {
         "branch_insert_branch" => Ok(include_str!(
             "../../../sql/sqlite/queries/history/branch_insert_branch.sql"
         )),
+        "branch_delete_branch" => Ok(include_str!(
+            "../../../sql/sqlite/queries/history/branch_delete_branch.sql"
+        )),
+        "branch_layer_count" => Ok(include_str!(
+            "../../../sql/sqlite/queries/history/branch_layer_count.sql"
+        )),
         "commit_advance_branch" => Ok(include_str!(
             "../../../sql/sqlite/queries/history/commit_advance_branch.sql"
         )),

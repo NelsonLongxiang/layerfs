@@ -22,7 +22,7 @@ Windows 原生 Store 在调用方进程内直接打开；下列每一行都有�
 | `branch.fork/merge` | 已服务；merge 冲突不产生对象 | [branch merge](WINDOWS-NATIVE-BRANCH-MERGE-2026-11-03.md) |
 | `branch.publish` | 已服务；只接受当前 head，旧提交拒绝 `HeadMoved` | [publish](WINDOWS-NATIVE-PUBLISH-2026-11-03.md) |
 | `branch.list_commits/diff_commits/diff_branches` | 已服务；分页与 cursor 续页 | [diff paging](WINDOWS-NATIVE-DIFF-PAGING-2026-11-03.md)、[cursor](WINDOWS-NATIVE-DIFF-CURSOR-2026-11-03.md) |
-| `branch.delete` | **不存在**：设计提案待 owner 定语义 | [设计](BRANCH-DELETE-DESIGN-2026-11-03.md) |
+| `branch.delete` | 已服务：空 Branch 删；未发布默认 `Unmerged`、`force` 删；被已发布 Layer 引用的拒绝 `Published` | [删除记录](WINDOWS-NATIVE-BRANCH-DELETE-2026-11-03.md)、[设计](BRANCH-DELETE-DESIGN-2026-11-03.md) |
 | `operator.*`、Store 模型/层模型 | 已服务（观测） | [store models](WINDOWS-NATIVE-STORE-MODELS-2026-11-03.md)、[layer models](WINDOWS-NATIVE-LAYER-MODELS-2026-11-03.md) |
 
 ## 直接 `runtime.native` API

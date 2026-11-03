@@ -10,7 +10,7 @@ use super::transaction::Transaction;
 use layerfs_history::error::{HistoryError, HistoryResult, Missing};
 use layerfs_history::identity::{BranchId, CatalogId, HistoryName, LayerStackId};
 use layerfs_history::records::{
-    BranchRecord, BranchSnapshot, ForkRequest, ForkSource, Page, PageResult,
+    BranchDeleteOutcome, BranchRecord, BranchSnapshot, ForkRequest, ForkSource, Page, PageResult,
 };
 
 use super::query::{self, Context, Cursor, Range};
@@ -27,6 +27,42 @@ const BRANCH_NEXT_PAGE: &str = "branch_branch_next_page";
 const BRANCH_NAME_TAKEN: &str = "branch_branch_name_taken";
 
 const INSERT_BRANCH: &str = "branch_insert_branch";
+
+const DELETE_BRANCH: &str = "branch_delete_branch";
+
+const BRANCH_LAYER_COUNT: &str = "branch_layer_count";
+
+/// Removes one Branch row from its stack; its Commits and objects stay.
+/// A published Layer names its source Branch and keeps that reference, so a
+/// Branch one published Layer names is `Published` and is not removed.
+pub(crate) fn delete_branch(
+    tx: &Transaction<'_>,
+    stack: LayerStackId,
+    branch: BranchId,
+) -> HistoryResult<BranchDeleteOutcome> {
+    let published = one(
+        tx,
+        BRANCH_LAYER_COUNT,
+        params![stack.as_slice(), branch.as_slice()],
+        |_row| Ok(()),
+    )?
+    .is_some();
+    if published {
+        return Ok(BranchDeleteOutcome::Published);
+    }
+    let removed = one(
+        tx,
+        DELETE_BRANCH,
+        params![branch.as_slice(), stack.as_slice()],
+        |_row| Ok(()),
+    )?;
+    Ok(if removed.is_some() {
+        BranchDeleteOutcome::Removed
+    } else {
+        BranchDeleteOutcome::Published
+    })
+}
+
 
 /// Reads one Branch by identity.
 pub(crate) fn branch(tx: &Transaction<'_>, id: BranchId) -> HistoryResult<Option<BranchRecord>> {

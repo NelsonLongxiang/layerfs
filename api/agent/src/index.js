@@ -16,6 +16,7 @@ import * as fsMethods from "./fs/index.js";
 import { INIT_TIMEOUT_MS, init } from "./project/init.js";
 import { list_branches } from "./project/list_branches.js";
 import { list_sandboxes } from "./project/list_sandboxes.js";
+import { deleteBranch } from "./branch/delete.js";
 import { diff_branches } from "./branch/diff_branches.js";
 import { diff_commits } from "./branch/diff_commits.js";
 import { fork } from "./branch/fork.js";
@@ -138,7 +139,7 @@ export class LayerFS {
     this[STATE] = { closed: null, transport: binding() };
     this.fs = bind(this, fsMethods);
     this.project = bind(this, { list_branches, list_sandboxes });
-    this.branch = bind(this, { list_commits, diff_commits, diff_branches, fork, merge, publish });
+    this.branch = bind(this, { list_commits, diff_commits, diff_branches, fork, merge, publish, delete: deleteBranch });
     this.sandbox = bind(this, { create, list_workspaces, close: closeSandbox });
     this.workspace = bind(this, { mount, exec, commit, unmount });
   }

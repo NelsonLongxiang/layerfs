@@ -49,6 +49,16 @@ pub struct BranchRecord {
     pub forked_from: Option<NodeId>,
 }
 
+/// What removing one Branch row did: removed it, or refused because a
+/// published Layer still names it as its source (#352 F-058).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BranchDeleteOutcome {
+    /// The Branch row was removed.
+    Removed,
+    /// A published Layer references the Branch, so it stays.
+    Published,
+}
+
 /// One coherent Branch snapshot with its resolved roots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchSnapshot {

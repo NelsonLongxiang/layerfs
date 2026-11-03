@@ -5,5 +5,6 @@ import diff_commits from "./diff_commits.js";
 import diff_branches from "./diff_branches.js";
 import merge from "./merge.js";
 import publish from "./publish.js";
+import deleteBranch from "./delete.js";
 
-export default { fork, list_commits, diff_commits, diff_branches, merge, publish };
+export default { fork, list_commits, diff_commits, diff_branches, merge, publish, delete: deleteBranch };

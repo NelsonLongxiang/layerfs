@@ -54,6 +54,14 @@ impl HistoryCatalog for HistoryProvider {
         self.read(|tx| branch::branch(tx, id))
     }
 
+    fn delete_branch(
+        &self,
+        stack: LayerStackId,
+        branch: BranchId,
+    ) -> HistoryResult<layerfs_history::records::BranchDeleteOutcome> {
+        self.write(|tx| branch::delete_branch(tx, stack, branch))
+    }
+
     fn branch_named(
         &self,
         stack: LayerStackId,

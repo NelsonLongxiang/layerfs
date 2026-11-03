@@ -50,3 +50,15 @@ CLI 1.1.0 与 SDK 都没有 `branch delete`。一次真实测试留下 20 个 `w
 本记录只是设计，没有实现、没有测试、没有能力声明；生产 LOC 不变。
 
 first parent 6a293ba2b3605ac901c42bf934f3553e6f91b985；本记录只增文档。
+## 实现后的修订（2026-11-03，schema 证据）
+
+实现时发现 schema 的硬约束，语义按现实收窄：
+
+- `layer.source_branch_id` 有 **FOREIGN KEY → branch(layer_stack_id, branch_id)**（DEFERRABLE INITIALLY DEFERRED）。**任何被已发布 Layer 引用的 Branch 不能删除**——删除会在提交时违反外键。
+- `commit.branch_id` 没有外键，所以「有 Commit 但从未发布」的 Branch 可以删（Commit 行保留，branch_id 成为悬空引用；对象不回收）。
+- 因此最终语义：**空 Branch 直接删；未发布的 Branch 默认拒绝 `Unmerged`、`force` 可删；被已发布 Layer 引用的 Branch 一律拒绝 `Published`**；`main` 拒绝 `InvalidInput`；缺失 `NoSuchBranch`；删除后名字可复用。
+- 删除在写车道的一次事务内完成；不回收对象（与 84 §8「GC 需独立契约」一致）。
+
+这意味着 CLI 报告里那 20 个 `win-*` 分支：**已发布的不能删**，未发布的可以 `--force` 删。若要让已发布分支可删，需要 schema 变更（`ON DELETE SET NULL` 或去掉该外键），属于独立契约，未擅自改。
+
+first parent 5e750cba191393f47ded2058839160ebf784a26c；本记录只增文档。
