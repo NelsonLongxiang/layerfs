@@ -91,6 +91,12 @@ export class NativeClientRoute {
     if (op === "sandbox.close") return { value: { kind: "Closed", mode, ...await this.#original.close() } };
     if (op === "workspace.mount") {
       if (typeof args.branch !== "string") throw new LayerFSError("InvalidInput", "native mount requires an existing Branch name", null);
+      // A Branch this project does not have must refuse here: starting an original
+      // target would consume an owner slot and leave retained custody for a typo.
+      // Only a definite NoSuchBranch is translated; any other Store outcome is
+      // left to the original Session, which still validates the binding.
+      try { await client.branch.list_commits(args.branch, 1, 0); }
+      catch (error) { if (error?.code === "NoSuchBranch") throw error; }
       const session = await this.#original.mount(args.branch);
       const state = await session.state();
       return { value: { kind: "Mounted", sandbox: this.#sandbox, path: session.path, image: null, mode, workspace: state.workspace, branch: args.branch, base: state.head, baseLayer: state.baseLayer, root: state.root } };

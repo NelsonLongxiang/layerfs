@@ -237,7 +237,10 @@ Explicit native command objects below delegate the original
 Session command owner; the SDK registration does not pretend that Windows
 argument-vector execution is Bash.
 
-workspace.mount requires that named original instance still running, uses its
+workspace.mount requires that named original instance still running and a Branch
+this project actually has: the route asks the client’s own Store first, so a
+missing Branch refuses NoSuchBranch before any original target is created (no
+owner slot is consumed and no retained custody is left). It then uses the
 existing mount implementation and admits at most 16 original Workspace owners
 across both SDK and direct entrypoints, including pending admissions. The count
 belongs to the original instance, so every client registered on it shares the same
