@@ -18,7 +18,7 @@ WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos.
 | native终止 | prepare → StopDispatcher/drain → remove mount → kernel revoke → Overlay close |
 | 部分finish结果或再次finish | finish_started锁存一次终止尝试，不重放未知关闭 |
 
-[close准入模块](../../../../tools/projfs-probe/src/native_close.rs) · [Session终止](../../../../tools/projfs-probe/src/native_overlay.rs) · [FFI](../../../../tools/projfs-probe/src/windows/overlay_ffi.rs) · [host](../../../../tools/winfsp-probe.cpp)。
+close准入模块（该私有探针模块已移除；见 tools/projfs-probe/README.md） · [Session终止](../../../../tools/projfs-probe/src/native_overlay.rs) · [FFI](../../../../tools/projfs-probe/src/windows/overlay_ffi.rs) · [host](../../../../tools/winfsp-probe.cpp)。
 独立诊断capture现在必须先显式release；finish不再偷偷清掉它。正常Commit发布与未提交Overlay关闭仍是不同操作，未加入隐式Commit。
 
 ## 原生实测

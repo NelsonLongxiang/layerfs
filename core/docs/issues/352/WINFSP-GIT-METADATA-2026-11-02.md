@@ -23,7 +23,7 @@ LayerFS Commit1为128dcc606637ff5b135f99a9e63adf1bee04eac2c6da0fec46939790ea5566
 
 1. **Windows基本属性持久化。** Git创建.git后默认设置Hidden；原host无SetBasicInfo，返回Function not implemented。现有Workspace原先只有portable mode/mtime/size，不能诚实完成Hidden。现在[Overlay inode](../../../../engine/crates/layerfs-overlay/src/contract/types.rs)与[schema40](../../../../engine/crates/layerfs-overlay/sql/schema.sql)保存Hidden/System/Archive（mask0x26），由同一active/captured/orphan代际管理；ReadOnly映射portable mode，不增加内存属性表或第二数据库。
 2. **复用规范构造。** [windows_metadata](../../../../engine/crates/layerfs-workspace/src/windows_metadata.rs)通过Content已有opaque属性树保存domain=windows、key=file-attributes、4字节大端值；缺值为0，错宽度/未知位拒绝。CapturedNamespace把flag变化视为真实变更，保留其余属性；移除flags、后续代际、已知Install和孤儿引用使用原路径。Content格式和全局Store schema未改。
-3. **原子创建/修改/覆盖。** 公共Workspace增加CreateWindows、SetWindowsAttributes、SetOpenWindowsAttributes、OverwriteWindows；创建携初始flags，覆盖同时truncate和replace/merge flags，非法字段先拒绝。[原生适配](../../../../tools/projfs-probe/src/native_metadata.rs)分别记录data-write和write-attributes权限，不能靠attribute-only句柄写文件数据。独立creation/access/change时间仍Unsupported；原本展示为portable mtime投影的事实不变，未假造完整NTFS时间模型。
+3. **原子创建/修改/覆盖。** 公共Workspace增加CreateWindows、SetWindowsAttributes、SetOpenWindowsAttributes、OverwriteWindows；创建携初始flags，覆盖同时truncate和replace/merge flags，非法字段先拒绝。原生适配（该私有探针模块已移除；见 tools/projfs-probe/README.md）分别记录data-write和write-attributes权限，不能靠attribute-only句柄写文件数据。独立creation/access/change时间仍Unsupported；原本展示为portable mtime投影的事实不变，未假造完整NTFS时间模型。
 4. **空目录枚举。** Git命令通过后，完整清单读取空objects/info目录曾返回ENOENT；host未返回dot entries。现在非root目录的点条目及父条目来自已有目录handle与当前parent custody，目录移动后也保持正确，不保存虚假namespace行或扫描路径猜parent。
 5. **明确关闭观测。** host只在close状态变化时记录exact files/dirs/pending/capture/retained与Cleanup/Close；关闭准入与期限不放宽。数据检查点与整体FAIL分开保存。
 

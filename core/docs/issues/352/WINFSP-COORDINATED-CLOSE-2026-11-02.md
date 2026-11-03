@@ -21,7 +21,7 @@ WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos.
 
 ## 实现及边界
 
-[Session协调](../../../../tools/projfs-probe/src/native_coordination.rs)与[host](../../../../tools/winfsp-probe.cpp)新增独立的stop-coordinate操作。普通stop不自动选此路线，原作用前Busy语义不变。第一次Busy请求消费一次，owner释放后可发不同的stop-coordinate-after-release，不重放旧请求。
+Session协调（该私有探针模块已移除；见 tools/projfs-probe/README.md）与[host](../../../../tools/winfsp-probe.cpp)新增独立的stop-coordinate操作。普通stop不自动选此路线，原作用前Busy语义不变。第一次Busy请求消费一次，owner释放后可发不同的stop-coordinate-after-release，不重放旧请求。
 
 - Cleanup只记事实；Close仍是原OpenFile、directory与lookup所有权的释放依据。handle保留serial、路径提示和write/attributes/delete-control权限。
 - 准入只接受已Cleanup、有名字的只读文件；Commit/capture/未知结果、目录、未Cleanup、可写或delete-control引用均作用前Busy。短暂准入挡住命名、普通变更及新写权限打开，允许read和真实Cleanup/Close。

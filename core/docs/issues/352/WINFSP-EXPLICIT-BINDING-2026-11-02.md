@@ -43,7 +43,7 @@ A provider 19:44:42.180Z–.446Z；B .223Z–.541Z，因此两个挂载确实同
 
 ## 修正诊断层的共享Branch假设
 
-此前[Commit核对](../../../../tools/projfs-probe/src/native_commit.rs)假定record.parent等于准入前head，并要求之后独立读取的全局Branch仍指向该Commit。两个合法Workspace时这不成立：driver可能合并已经推进的head，另一实例也可能在本地settlement前再次推进它。
+此前Commit核对（该私有探针模块已移除；见 tools/projfs-probe/README.md）假定record.parent等于准入前head，并要求之后独立读取的全局Branch仍指向该Commit。两个合法Workspace时这不成立：driver可能合并已经推进的head，另一实例也可能在本地settlement前再次推进它。
 
 现在核对原返回的merge.from/head、record.meta.branch/via、独立读取的不可变Commit记录与本Workspace已知install。既有产品driver的merge/Save/History实现未改，不通过“再读全局head”猜测已完成操作的成败。
 

@@ -34,7 +34,7 @@ WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos.
 
 ## 所有权拆分
 
-[CommitWork/CommitCompletion](../../../../tools/projfs-probe/src/native_commit.rs)从原Session commit方法移出，职责为：
+CommitWork/CommitCompletion（该私有探针模块已移除；见 tools/projfs-probe/README.md）从原Session commit方法移出，职责为：
 1. begin_commit在Session锁内校验scope、独立capture、已有pending或retained结果，记录一个token。
 2. CommitWork移动给单个worker，消费一次，调用**未改动的公开BoundWorkspace::commit_captured**；文件handle表仍归Session，不复制或移动到worker。
 3. CommitCompletion持有原始成功、失败或panic payload；只有相同bound pointer与token的Session能settle。成功核对并本地Install确认后清pending；错误保存原始custody，不自动重放或猜清理。

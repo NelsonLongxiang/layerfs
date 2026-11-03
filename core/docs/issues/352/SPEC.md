@@ -155,7 +155,7 @@ never skip-listed after the fact.
 
 Every replay Sandbox and the native calibration use one image, so a test sees
 the same Node and package manager in both. Built on 2026-10-18 from
-[`dsh/tools/history/runtime/Dockerfile`](../../../../dsh/tools/history/runtime/Dockerfile):
+`dsh/tools/history/runtime/Dockerfile`（dsh 已移出本仓库）:
 
 | Fact | Value |
 | --- | --- |
