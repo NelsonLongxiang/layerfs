@@ -21,6 +21,9 @@ try{
  const rejected=await shop.workspace.mount(reg.sandbox,'missing-branch').then(()=>null,e=>e);
  assert.ok(rejected,'a missing Branch must not mount');assert.equal(rejected.code,'NoSuchBranch',String(rejected.message));
  const after=await instance.status();assert.equal(after.sessions,0,'a refused mount must not consume an owner');
+ const protectedMain=await shop.workspace.mount(reg.sandbox,'main').then(()=>null,e=>e);assert.ok(protectedMain);assert.equal(protectedMain.code,'NoSuchBranch',String(protectedMain.message));
+ for(const bad of ['', '   ', 42, null]){const refused=await shop.workspace.mount(reg.sandbox,bad).then(()=>null,e=>e);assert.ok(refused,'mount must refuse '+String(bad));assert.equal(refused.code,'InvalidInput',String(refused.message));}
+ assert.equal((await instance.status()).sessions,0,'no refusal may consume an owner');
  const ws=await shop.workspace.mount(reg.sandbox,'feature');assert.equal((await instance.status()).sessions,1);
  const end=await shop.workspace.unmount(ws);assert.equal(end.processExit,0);
  const closed=await instance.close();assert.equal(closed.processExit,0);
