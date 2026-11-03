@@ -126,6 +126,9 @@ export class NativeClientRoute {
   async #backend(client, op, args) {
     this.#scope(args);
     if (op === "backend.daemon.workspace.get_storage") throw new LayerFSError("Unsupported", "native Workspace storage stats need either a second connection to the exclusive in-memory overlay the restricted target owns or a storage verb the original protocol does not have; this route never fabricates inode/payload/changes numbers", null);
+    if (op === "backend.daemon.workspace.list_changes") throw new LayerFSError("Unsupported", "native change listing would have to scan the exclusive in-memory overlay and the original protocol has no changes verb; this route does not guess added/modified/removed paths", null);
+    if (op === "backend.daemon.process.start" || op === "backend.daemon.process.list" || op === "backend.daemon.process.cancel") throw new LayerFSError("Unsupported", "the native route supervises no background processes; start an explicit windows-native command through workspace.exec and own its lifetime", null);
+    if (op === "backend.daemon.sandbox.get_log") throw new LayerFSError("Unsupported", "the native route has no daemon container and therefore no daemon log; product diagnostics live in the original Session stderr and trace", null);
     if (op !== "backend.daemon.workspace.status") throw new LayerFSError("Unsupported", "this native SDK registration has no requested daemon read model or process API", null);
     return { value: await this.#use(args, async (session) => {
       const state = await session.handle().state();

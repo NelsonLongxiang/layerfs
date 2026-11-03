@@ -232,10 +232,14 @@ instance on those clients. project.list_sandboxes and sandbox.list_workspaces
 report it explicitly in that native mode. It is not a container-image creation:
 sandbox.create(image) stays Unsupported. workspace.exec’s Bash command contract,
 background process APIs and forced unmount remain Unsupported. So does
-backend.daemon.workspace.get_storage: inode/entry/payload/changes numbers live in
-the exclusive in-memory overlay the restricted target owns, and the original
-protocol has no storage verb, so the route refuses rather than fabricate them.
-workspace.status and sandbox.list_workspaces stay served. Commit messages
+backend.daemon.workspace.get_storage and list_changes: inode/entry/payload/
+changes numbers and added/modified/removed paths live in the exclusive in-memory
+overlay the restricted target owns, and the original protocol has no storage or
+changes verb, so the route refuses rather than fabricate them. daemon.process.*
+is refused because the native route supervises no background processes (start an
+explicit windows-native command through workspace.exec and own its lifetime), and
+sandbox.get_log because there is no daemon container. workspace.status and
+sandbox.list_workspaces stay served. Commit messages
 and explicit force publication use the ordinary SDK interface described below.
 Explicit native command objects below delegate the original
 Session command owner; the SDK registration does not pretend that Windows
