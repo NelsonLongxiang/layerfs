@@ -16,7 +16,7 @@
 1. **`layerfs.cmd` shim 多行参数静默截断**（危害最高）。`packages/host/src/bin/layerfs.cmd` 的内容就是 `node "%DSH_LAYERFS_CLI%" %*`；经 cmd.exe 传参时参数里的换行会把命令截断，`fs edit --new "line1\nline2"` 只收到 `line1`，替换成相同内容后 **exit 0 的空提交、无报错**。修法在 shim 形态或调用侧（改用 `--from` 文件），CLI 自身看不到被截断的内容。
 2. **没有 `branch delete`**。`api/cli/src/branch` 只有 diff/fork/list/merge/publish，SDK 的 `branch` 模块同样没有删除；报告里 20 个测试分支无法清理。
 3. **chcp 横幅污染 stdout**。程序化消费应直调 `node "$env:DSH_LAYERFS_CLI"`（报告已验证无横幅、纯 JSON）。
-4. **`fs.edit` 对 old === new 不拒绝**，会产出空提交（与 1 叠加时特别隐蔽）。可作为产品硬化项。
+4. ~~`fs.edit` 对 old === new 不拒绝，会产出空提交~~——**已实测否定**：old === new 时 Store 返回 `{kind: "UpToDate"}`，提交数不增、head 不变（见 [空操作 edit 记录](WINDOWS-NATIVE-NOOP-EDIT-2026-11-03.md)）。与 1 叠加时的问题是「成功但没有任何改动」被静默接受，不是空提交。
 
 ## 环境性，不是产品缺陷
 
