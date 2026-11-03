@@ -396,7 +396,10 @@ creation. No Store is created/imported or mounted by create. No image, container
 WSL worker, automatic placement or machine-wide discovery is implied.
 
 The returned immutable instance has id, project, mode: "windows-restricted", and
-status(), mount(branch), close(). mount accepts one existing non-main Branch name.
+status(), mount(branch), close(), workspace(path). workspace(path) returns the same
+frozen Session handle for any Workspace this instance owns, including one an SDK
+client mounted, so the two entrypoints address one original Session rather than two.
+mount accepts one existing non-main Branch name.
 It uses only the original running instance and returns the existing native Session
 handle. Numbered backend work stays beneath the protected instance work directory.
 Each fresh mount junction instead lives beside that directory, under its existing

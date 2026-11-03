@@ -99,7 +99,14 @@ export class NativeInstance {
           this.#context = Object.freeze({ pid: integer(m[1]), created: integer(m[2]), launch: (request, response) => this.#call("launch", { request, response }) });
           clearTimeout(this.#timer); this.#state = "running";
           this.#ready.resolve(Object.freeze({ id: this.#options.id, project: this.#options.project, mode: "windows-restricted",
-            status: () => this.#call("status"), mount: (branch) => this.#attach(branch), close: () => this.#close() }));
+            status: () => this.#call("status"), mount: (branch) => this.#attach(branch), close: () => this.#close(),
+            // Address any Workspace this instance owns, including one an SDK client mounted:
+            // both entrypoints resolve the same original Sessions, so the handle is the same.
+            workspace: (path) => {
+              const session = this.#sessions.owned(this.#options.id).find((s) => s.path === path);
+              if (!session) throw new LayerFSError("NotMounted", "this original native instance does not own that Workspace path", null);
+              return session.handle();
+            } }));
         } else if ((m = /^LFS_INSTANCE_FAILED win32=([0-9]+)$/.exec(line))) {
           if (this.#state !== "starting" || this.#beforeEffect) throw new Error("native instance failure after admission");
           this.#beforeEffect = new Error("native instance setup win32 " + m[1]);
