@@ -231,7 +231,11 @@ The returned { sandbox, image: null, mode: "windows-restricted" } names this
 instance on those clients. project.list_sandboxes and sandbox.list_workspaces
 report it explicitly in that native mode. It is not a container-image creation:
 sandbox.create(image) stays Unsupported. workspace.exec’s Bash command contract,
-background process APIs and forced unmount remain Unsupported. Commit messages
+background process APIs and forced unmount remain Unsupported. So does
+backend.daemon.workspace.get_storage: inode/entry/payload/changes numbers live in
+the exclusive in-memory overlay the restricted target owns, and the original
+protocol has no storage verb, so the route refuses rather than fabricate them.
+workspace.status and sandbox.list_workspaces stay served. Commit messages
 and explicit force publication use the ordinary SDK interface described below.
 Explicit native command objects below delegate the original
 Session command owner; the SDK registration does not pretend that Windows

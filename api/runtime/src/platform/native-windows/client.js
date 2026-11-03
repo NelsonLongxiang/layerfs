@@ -125,6 +125,7 @@ export class NativeClientRoute {
   }
   async #backend(client, op, args) {
     this.#scope(args);
+    if (op === "backend.daemon.workspace.get_storage") throw new LayerFSError("Unsupported", "native Workspace storage stats need either a second connection to the exclusive in-memory overlay the restricted target owns or a storage verb the original protocol does not have; this route never fabricates inode/payload/changes numbers", null);
     if (op !== "backend.daemon.workspace.status") throw new LayerFSError("Unsupported", "this native SDK registration has no requested daemon read model or process API", null);
     return { value: await this.#use(args, async (session) => {
       const state = await session.handle().state();
