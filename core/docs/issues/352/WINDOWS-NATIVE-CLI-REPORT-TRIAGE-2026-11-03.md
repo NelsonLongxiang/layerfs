@@ -28,6 +28,10 @@
 
 报告把 `project list_sandboxes` 记为「拒绝 Unsupported」。那是 **CLI 路径**（缺 daemon 绑定）的行为；SDK 原生路由的 `project.list_sandboxes` 是**已服务**的——实例关闭时返回空 `items`（见 [终态读模型](WINDOWS-NATIVE-TERMINAL-READS-2026-11-03.md)）。两者不是同一面，文档/报告不应混写。
 
+## 后续（2026-11-03 18:55）
+
+- **shim 多行截断已修复**（插件仓 `dsh-layerfs`，commit `9be4724`）：新增 `packages/host/src/bin/layerfs.ps1`；PowerShell 会优先解析同目录的 `.ps1` 而不是 `.cmd`，参数按对象传递，`layerfs fs edit --new "line1\nline2"` 实测 6 个参数、换行保留。`.cmd` 保留给 cmd.exe 调用者（它仍会截断，这是 cmd.exe 的解析限制）。`pnpm test` 全过。
+
 ## 建议动作
 
 - 文档：Windows 原生指南（PowerShell、`--from`、多行限制、shim 横幅、父目录语义）。
