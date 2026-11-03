@@ -37,9 +37,9 @@
 | --- | --- | --- |
 | `daemon.workspace.status` | 已服务 | [互换](WINDOWS-NATIVE-INTERCHANGE-2026-11-03.md) |
 | `daemon.workspace.get_storage` | **拒绝** `Unsupported`：数字只在受限 target 独占的 overlay 里，原协议无 storage 动词 | [存储拒绝](WINDOWS-NATIVE-STORAGE-REFUSAL-2026-11-03.md) |
-| `daemon.workspace.list_changes` | **拒绝** `Unsupported`：需要 overlay 扫描，理由同上 | [client.js](../../../../api/runtime/src/platform/native-windows/client.js) |
-| `daemon.process.start/list/cancel` | **拒绝** `Unsupported`：原生不监督后台进程 | 同上 |
-| `daemon.sandbox.get_log` | **拒绝** `Unsupported`：无 daemon 容器日志 | 同上 |
+| `daemon.workspace.list_changes` | **拒绝** `Unsupported`：需要扫描受限 target 独占的 overlay，且原协议无 changes 动词；不猜 added/modified/removed | [client.js](../../../../api/runtime/src/platform/native-windows/client.js) |
+| `daemon.process.start/list/cancel` | **拒绝** `Unsupported`：原生不监督后台进程；改用 `workspace.exec` 的显式 windows-native 命令并自持生命周期 | 同上 |
+| `daemon.sandbox.get_log` | **拒绝** `Unsupported`：没有 daemon 容器；诊断看原 Session 的 stderr 与 trace | 同上 |
 
 ## 未取得资格（不要写成已服务）
 
