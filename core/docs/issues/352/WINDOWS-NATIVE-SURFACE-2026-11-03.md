@@ -23,7 +23,7 @@
 | 面 | 状态 | 依据 |
 | --- | --- | --- |
 | `sandbox.create` | **拒绝** `Unsupported`：注册消费已运行的实例，不做镜像创建 | [native_client_real.mjs](../../../../api/runtime/test/verify/native_client_real.mjs) |
-| `project.list_sandboxes` | 已服务：返回该实例一条记录（含 Workspace 数） | [client.js](../../../../api/runtime/src/platform/native-windows/client.js)；真实消费者未单独覆盖 |
+| `project.list_sandboxes` | 已服务：返回该实例一条记录（含 Workspace 数），计数随挂载变化，实例关闭后为空 | [native_client_real.mjs](../../../../api/runtime/test/verify/native_client_real.mjs)（第 33、46、69 行） |
 | `sandbox.list_workspaces` | 已服务：列出实例名下全部挂载（含直接挂载），retained admission 时 `Unknown` | [混合容量](WINDOWS-NATIVE-MIXED-CAPACITY-2026-11-03.md)、[两 client](WINDOWS-NATIVE-TWO-CLIENTS-2026-11-03.md) |
 | `workspace.mount` | 已服务；缺失 Branch / `main` / 空或非字符串名在创建 target 前拒绝 | [缺失 Branch](WINDOWS-NATIVE-MISSING-BRANCH-2026-11-03.md)、[main/坏名](WINDOWS-NATIVE-MISSING-BRANCH-2026-11-03.md) |
 | `workspace.status` | 已服务；`branchHead` 由调用方自身 Store 观察，不可读为 null | [status head](WINDOWS-NATIVE-STATUS-HEAD-2026-11-03.md) |
@@ -45,7 +45,6 @@
 
 - 多进程注册、跨用户；强制卸载；Bash/OCI；全映射/内核排空；崩溃恢复（产品明确不重启，retained 即终态）；发现/安装/发行。
 - 16 挂载只在容量与一次并发提交下取得资格；持续压力、更高并发、跨进程写者未测。
-- `project.list_sandboxes` 的真实消费者未单独覆盖（仅有路由实现与伪绑定路径）。
 
 ## 相关记录
 
