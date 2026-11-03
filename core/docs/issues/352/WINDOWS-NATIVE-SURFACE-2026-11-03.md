@@ -69,7 +69,7 @@ Windows 原生 Store 在调用方进程内直接打开；下列每一行都有�
 
 - 多进程注册、跨用户；强制卸载；Bash/OCI；全映射/内核排空；崩溃恢复（产品明确不重启，retained 即终态）；发现/安装/发行。
 - 16 挂载只在容量与一次并发提交下取得资格；持续压力、更高并发、跨进程写者未测。
-- `workspace.status` 的 `pendingMerge=true`：瞬态/不确定安装状态，公开调用序列不可确定复现（[调查](WINDOWS-NATIVE-PENDING-MERGE-2026-11-03.md)）；`branch.delete`、`branch.merge units`、`fs.edit` 跨 32 KiB 已取得真实消费者。
+- `workspace.status` 的 `pendingMerge=true`：瞬态/不确定安装状态，公开调用序列不可确定复现（[调查](WINDOWS-NATIVE-PENDING-MERGE-2026-11-03.md)）；`branch.delete`、`branch.merge units`、`fs.edit` 跨 32 KiB、符号链接、glob 预算截断、diff_branches cursor、blame fromLine 已取得真实消费者。
 
 ## 相关记录
 
