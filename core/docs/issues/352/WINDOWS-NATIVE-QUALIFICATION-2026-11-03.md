@@ -37,7 +37,7 @@ Windows 原生：Store 面在调用方进程内直接打开（无 daemon、无 W
 - 持续压力、更高并发、跨进程写者、崩溃恢复（产品明确不重启，retained 即终态）。
 - 发现/安装/发行；OCI/Bash；全映射/内核排空；named IPC。
 - `branch.delete` 的**已发布分支**：schema 外键使其不可删（未发布分支可删/force 删，已发布一律 `Published`）；若要放开需要 schema 变更。
-- `workspace.status` 的 `pendingMerge` 为 true 的路径；`branch.merge` 的 `units`；`fs.edit` 跨 32 KiB 窗口；`glob/grep` 的 `skipped` 与超预算截断。
+- `workspace.status` 的 `pendingMerge` 为 true 的路径：**瞬态/不确定安装状态**，公开调用序列下不可确定复现（见 [调查](WINDOWS-NATIVE-PENDING-MERGE-2026-11-03.md)），与 retained 失败保管同类。
 - macOS/WSL worker 路由不在本页范围（各自独立契约）。
 
 ## 如何复核
