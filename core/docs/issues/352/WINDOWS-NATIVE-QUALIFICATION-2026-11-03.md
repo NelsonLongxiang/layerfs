@@ -19,6 +19,10 @@ Windows 原生：Store 面在调用方进程内直接打开（无 daemon、无 W
 | retained 实例的失败保管与拒绝 | [retained](WINDOWS-NATIVE-RETAINED-INSTANCE-2026-11-03.md) | 失败后不重启是产品决定 |
 | Windows 原生 CLI（`layerfs`）的读写/分支/合并/发布 | [分诊](WINDOWS-NATIVE-CLI-REPORT-TRIAGE-2026-11-03.md) | shim 已修两次；cmd.exe 调用者仍受 cmd 解析限制 |
 
+### 2026-11-04 产品接线补充
+
+见 [产品接线与闭环资格](WINDOWS-NATIVE-PRODUCT-INTEGRATION-2026-11-04.md)：插件 host 原实例所有权、GUI 实际 create/mount/edit/save/Dirty/Commit/unmount/close 已实证；agent 公共 SDK 路径由真实 contributor、detached Session 与独立脚本进程验证，代码已取得独立同 SHA PASS 并推送读回。它不等于在线模型/工具调度器验收，也不等于跨进程借 host 句柄或机器级发现。
+
 ## 明确拒绝（设计如此，不是缺陷）
 
 | 调用 | 拒绝码 | 原因 |

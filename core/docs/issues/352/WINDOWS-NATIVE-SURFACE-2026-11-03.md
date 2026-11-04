@@ -62,8 +62,16 @@ Windows 原生 Store 在调用方进程内直接打开；下列每一行都有�
 | --- | --- | --- |
 | `layerfs` shim 多行参数 | 已修：`.ps1` 优先于 `.cmd`，参数按对象传递 | [分诊](WINDOWS-NATIVE-CLI-REPORT-TRIAGE-2026-11-03.md)（插件仓 `9be4724`） |
 | shim 管道 stdin | 已修：管道对象按 CRLF 转发、输出回吐、退出码保留 | 同上（插件仓 `382a2ed`） |
-| `branch delete` | **缺失**：设计提案待 owner | [设计](BRANCH-DELETE-DESIGN-2026-11-03.md) |
+| `branch delete` | 已实现；未发布分支删除/force、已发布 `Published` 拒绝 | [删除记录](WINDOWS-NATIVE-BRANCH-DELETE-2026-11-03.md)、[后续决定](WINDOWS-NATIVE-OPEN-DECISIONS-2026-11-04.md) |
 | `fs.write` 父目录 | 不自动创建，拒绝 `NoSuchPath`（设计如此，已记录） | [分诊](WINDOWS-NATIVE-CLI-REPORT-TRIAGE-2026-11-03.md) |
+
+## 产品接线（2026-11-04 补充）
+
+| 面 | 已证实范围 | 依据 |
+| --- | --- | --- |
+| 插件 host 原实例 owner | 显式创建/列举/挂载/status/Commit/卸载/关闭；scope=this-host-runtime，无 GET 自启 | [产品接线](WINDOWS-NATIVE-PRODUCT-INTEGRATION-2026-11-04.md) |
+| native GUI 生命周期 | Tabbit 实际点击 create/mount/edit/save/Dirty/Commit/unmount/close；小文本16KiB窗口，独立Store读回 | 同上 GUI 证据 |
+| agent 公共 SDK/runtime | 实际 contributor + detached Session + 独立脚本进程自持原句柄；公共 SDK 读回/trace/终态关闭（独立同 SHA PASS，已推送读回） | 同上 agent 证据 |
 
 ## 未取得资格（不要写成已服务）
 
