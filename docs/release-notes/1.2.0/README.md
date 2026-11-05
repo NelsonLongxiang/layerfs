@@ -41,9 +41,11 @@ Windows 原生路由（`route: native`）：
 
 ## Release gate
 
-`.github/workflows/windows-native-gate.yml` 是发布门：手工触发或打 tag 时跑 Windows
-原生套件，任一红色即失败（不改动 `ci.yml` 的 report-only 快车道）。产物与哈希见
-[ARTIFACTS.md](ARTIFACTS.md)。
+发布门内容：五个 crate 的 Windows 套件 + 原生路由 SDK face。本 fork 的 GitHub Actions
+被禁用（`gh workflow run` 返回 422），因此**门禁在本机执行**并在
+[门禁回执](../../../core/docs/issues/352/WINDOWS-NATIVE-GATE-RUN-2026-11-05.md) 记录
+693 通过 / 0 失败。工作流文件保留，fork 一旦启用 Actions 即可直接使用。
+产物与哈希见 [ARTIFACTS.md](ARTIFACTS.md)。
 
 ## Known limitations
 
