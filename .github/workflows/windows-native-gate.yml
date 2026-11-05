@@ -1,0 +1,116 @@
+# The Windows-native release gate. The fast lane (ci.yml) reports and never
+# blocks a push or merge (AGENTS.md §4); this workflow is the *release*
+# criterion: a red run means the 1.2.0 tag must not be created. It runs by
+# hand and on release tags, so ordinary pushes stay governed by the fast lane.
+name: windows-native-gate
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-native-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  windows-native:
+    name: windows native suites (release gate)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install 1.85.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: . -> target
+          save-if: false
+      # Build first so compile time is never counted against the 120 s ceilings.
+      - name: Build test binaries
+        run: >
+          cargo +1.85.1 test --manifest-path Cargo.toml --locked --no-run
+          -p layerfs-content -p layerfs-persistence -p layerfs-project
+          -p layerfs-overlay -p layerfs-store-service
+      # The native route's SDK face: init/fork/write/apply/edit/publish against
+      # a temporary Store, and the daemon-backed family refusing Unsupported.
+      - name: Native route SDK face
+        shell: bash
+        run: |
+          cargo +1.85.1 build --manifest-path Cargo.toml --locked -p layerfs-node
+          cp target/debug/layerfs_node.dll engine/crates/layerfs-node/layerfs.node
+          timeout 110 node api/agent/test/route-native.mjs
+      # Hard gate: any red crate fails this run. No || true, no continue-on-error.
+      - name: Run windows store suites (each crate capped at 120 s)
+        shell: bash
+        run: |
+          status=0
+          for crate in layerfs-content layerfs-persistence layerfs-project \
+                       layerfs-overlay layerfs-store-service; do
+            echo "## $crate"
+            timeout 120 cargo +1.85.1 test --manifest-path Cargo.toml --locked -p "$crate" || status=1
+          done
+          exit $status
+
+  build-artifacts:
+    name: build windows artifacts
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install 1.85.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: . -> target
+          save-if: false
+      # The runner carries Visual Studio and the Windows SDK; resolve them once
+      # and hand the exact directories to the build scripts (they take no guesses).
+      - name: Resolve MSVC and Windows SDK
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $msvc = Get-ChildItem "$vs\VC\Tools\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $kit = "${env:ProgramFiles(x86)}\Windows Kits\10"
+          $sdk = Get-ChildItem "$kit\Include" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          "VCTOOLS=$($msvc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WINSDK=$kit" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SDKVERSION=$($sdk.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # One script builds the native Session process and the WinFsp host beside it.
+      - name: Build native process and WinFsp host
+        shell: pwsh
+        run: >
+          ./tools/build-native-windows.ps1 -VcTools $env:VCTOOLS -WindowsSdk $env:WINSDK
+          -SdkVersion $env:SDKVERSION -Out build-native -CargoTarget target
+      - name: Build restricted launcher
+        shell: pwsh
+        run: >
+          ./tools/build-restricted-windows.ps1 -VcTools $env:VCTOOLS -WindowsSdk $env:WINSDK
+          -SdkVersion $env:SDKVERSION -Out build-restricted
+      - name: Build Node binding
+        shell: bash
+        run: |
+          cargo +1.85.1 build --manifest-path Cargo.toml --locked -p layerfs-node
+          cp target/debug/layerfs_node.dll engine/crates/layerfs-node/layerfs.node
+      - name: Hash and publish the artifacts
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          cp build-native/layerfs-native.exe build-native/layerfs-winfsp.exe build-restricted/layerfs-restricted.exe release-artifacts/
+          cp engine/crates/layerfs-node/layerfs.node release-artifacts/
+          cd release-artifacts
+          sha256sum * | tee ../artifact-sha256.txt
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-native-1.2.0
+          path: |
+            release-artifacts/
+            artifact-sha256.txt
+          retention-days: 30
