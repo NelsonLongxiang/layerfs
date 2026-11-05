@@ -39,6 +39,12 @@ Windows 原生路由（`route: native`）：
 - CI：`ci.yml` 的 `windows` job 覆盖 store 系列；C++ 探针、node 绑定与插件集成不在 CI 内，
   由本地与 3081 回执覆盖
 
+## Release gate
+
+`.github/workflows/windows-native-gate.yml` 是发布门：手工触发或打 tag 时跑 Windows
+原生套件，任一红色即失败（不改动 `ci.yml` 的 report-only 快车道）。产物与哈希见
+[ARTIFACTS.md](ARTIFACTS.md)。
+
 ## Known limitations
 
 六项边界的逐项定性与理由见
