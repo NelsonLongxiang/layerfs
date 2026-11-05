@@ -19,3 +19,6 @@ benchmark-results/*
 !benchmark-results/fs-bench-pro/
 benchmark-results/fs-bench-pro/*
 !benchmark-results/fs-bench-pro/optimization-history.md
+
+# Machine-local receipts and scratch evidence (upstream kept this in .git/info/exclude).
+tmp/

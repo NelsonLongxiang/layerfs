@@ -45,7 +45,8 @@ Windows 原生路由（`route: native`）：
 被禁用（`gh workflow run` 返回 422），因此**门禁在本机执行**并在
 [门禁回执](../../../core/docs/issues/352/WINDOWS-NATIVE-GATE-RUN-2026-11-05.md) 记录
 693 通过 / 0 失败。工作流文件保留，fork 一旦启用 Actions 即可直接使用。
-产物与哈希见 [ARTIFACTS.md](ARTIFACTS.md)。
+产物与哈希见 [ARTIFACTS.md](ARTIFACTS.md)；机器可执行验证器（spec/run/归档 + 硬 meta 门）见
+[VERIFIER.md](VERIFIER.md)。
 
 ## Known limitations
 
