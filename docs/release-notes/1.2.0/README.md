@@ -32,6 +32,9 @@ Windows 原生路由（`route: native`）：
 - Rust Windows 套件 **63 个用例**（persistence / project / store-service / overlay / node 五个 crate）
 - C++ 探针 **7 个文件**：WinFsp 挂载、回调、接纳、section 持有；受限执行、IPC、cwd
 - dsh 插件侧 5 套 native 测试 + 2026-11-04 真实浏览器 GUI 全生命周期验收
+- 2026-11-05 活模型会话：模型经工具调度自行发起 bash，拿到 16 个 `DSH_LAYERFS_*`
+  变量并跑通 CLI 分支列举（见
+  [活模型会话验证](../../../core/docs/issues/352/WINDOWS-NATIVE-LIVE-AGENT-2026-11-05.md)）
 - 证据：仓库内 **78 份** `WINDOWS-NATIVE-*` 回执
 - CI：`ci.yml` 的 `windows` job 覆盖 store 系列；C++ 探针、node 绑定与插件集成不在 CI 内，
   由本地与 3081 回执覆盖
@@ -41,7 +44,8 @@ Windows 原生路由（`route: native`）：
 六项边界的逐项定性与理由见
 [Windows 原生边界](../../../core/docs/issues/352/WINDOWS-NATIVE-BOUNDARIES-2026-11-05.md)。
 
-1. **agent 路径**只验证到 contributor 注入脚本级，未覆盖活模型/工具的调度链（限制）
+1. **agent 路径**已验证到 CLI 级（活模型 + 工具调度，2026-11-05）；GUI 输入路径未覆盖。
+   另：插件按文件夹字符串精确匹配项目，正斜杠 cwd 会静默拿不到 `DSH_LAYERFS_*`（限制）
 2. **机器级发现**的作用域是 this-host-runtime，不做跨进程或跨机列举（范围）
 3. **宿主崩溃后不自动恢复**；保留/不确定的句柄需要人工关闭与清理（限制）
 4. **不提供强制 unmount**；Workspace 为 Dirty 时按设计拒绝卸载（拒绝）

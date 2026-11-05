@@ -5,7 +5,7 @@
 
 | # | 边界 | 现状 | 定性 | 理由 | 需要的动作 |
 |---|---|---|---|---|---|
-| 1 | 活模型/工具调度下的 agent 路径 | 只验证过 contributor 注入的独立 Node 脚本（`native-agent-real`），未跑真实会话工具链 | **限制** | 技术路径已通（同一 wrapper/SDK/runtime），缺端到端证据 | 发布前补一次真实会话并留回执；否则按本文件明写"脚本级验证" |
+| 1 | 活模型/工具调度下的 agent 路径 | **已验证（2026-11-05）**：活模型会话经 HTTP API 驱动，插件注入 16 个 `DSH_LAYERFS_*`（含 native 部署 JSON），模型自行发起 bash 并跑通 CLI 分支列举 | **已验证（CLI 路径）** | 见 [活模型会话验证](WINDOWS-NATIVE-LIVE-AGENT-2026-11-05.md) | 剩余：GUI 输入路径未覆盖；folder 匹配为字符串精确匹配（正斜杠 cwd 会静默丢失项目） |
 | 2 | 机器级 native 实例发现 | 作用域 = this-host-runtime；不跨进程、不跨机列举 | **范围** | 与 2.0 的 Machine 模型对齐前不宜自创发现机制；进程本地是设计使然 | 无需改动；对外写明作用域与含义 |
 | 3 | 宿主崩溃恢复 | retained/uncertain custody 可见，但无自动恢复；进程亡则句柄不可用 | **限制** | 自动恢复需要租约与回收设计，2.0 的 machine 记录才会承载 | 写明"崩溃后需人工关闭/清理"，给出检测方法（native 列表 + retained 记录） |
 | 4 | 强制 unmount | Dirty 时拒绝卸载（可逆 Busy，service kept） | **拒绝** | 数据安全优先；2026-11-04 验收正是靠它保住数据 | 文档化：commit 或确认丢弃后再卸载；不提供 force teardown |
