@@ -1,6 +1,9 @@
 # LayerFS 1.2.0 — 发布产物清单
 
-> 状态：清单与哈希已钉定；**release 模式重建待做**（见文末清单）。
+> 状态：清单与哈希已钉定；**产物重建待做**（见文末清单）。
+> 构建 profile：**dev** —— 三个脚本都按仓库惯例以 dev profile 产出并在回执中记录
+> `profile: 'dev'`（`build-native-windows.ps1` 里 `cargo build` 无 `--release`）；
+> 资格记录（qualification）依据的正是这些产物。
 > 本文件是 1.2.0 的"可复核交付面"：每个产物给出构成、构建命令与 sha256。
 
 ## 产物
@@ -32,7 +35,8 @@
 
 ## 待办（发布前）
 
-- [ ] release 模式重建全部产物（`cargo build --release` / 各 ps1 的 release 参数），替换上表哈希
+- [ ] 在带 MSVC 的机器上重跑三个脚本（显式传 `-VcTools` / `-WindowsSdk` / `-SdkVersion`）
+      重建产物，替换上表哈希；脚本拒绝写入已存在的输出目录，需用新目录
 - [ ] 生成 `layerfs.node` 与插件 bundle 的 sha256
 - [ ] 在 Windows 上手工跑一次 `windows-native-gate` 并留存 run 链接
 - [ ] 打 `v1.2.0` tag（发布门的 tag 触发路径）
