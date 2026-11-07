@@ -45,7 +45,11 @@ meta_version 1.4 · verdict PASS
 
 ## 复跑
 
+重建输入的单一事实源在 [`verify/win-native-release/`](../../../verify/win-native-release/README.md)
+（分支 `verify/converge-win-native-release`）；运行态工作区仍在 `tmp/verify-ws`（见其 SUPERSEDED.md）。
+
 ```bash
+python verify/win-native-release/build-snapshot.py          # 重建快照（参数化）
 cd tmp/verify-ws && export YGL_HOME="$PWD/home"
 ygl-trees verify run spec_497e1afd9b53 --db release-1.2.0.sqlite
 ygl-trees verify report run_7a59473105dc88b0
