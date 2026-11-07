@@ -1,0 +1,298 @@
+[
+ {
+  "source_clause": "发布版本号为 1.2.0，Cargo 工作区与四个 api 包的 version 字段一致。",
+  "anchor": {
+   "quote": "发布版本号为 1.2.0，Cargo 工作区与四个 api 包的 version 字段一致。",
+   "locator": "material.md#S1"
+  },
+  "title": "五个版本字段均为 1.2.0",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "in",
+       "value": [
+        "version_workspace",
+        "version_api_agent",
+        "version_api_backend",
+        "version_api_runtime",
+        "version_api_cli"
+       ]
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "1.2.0"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 5
+  }
+ },
+ {
+  "source_clause": "发布包含五个产物：三个可执行文件、Node 绑定与插件 bundle。",
+  "anchor": {
+   "quote": "发布包含五个产物：三个可执行文件、Node 绑定与插件 bundle。",
+   "locator": "material.md#S2"
+  },
+  "title": "五个产物登记在册",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "artifacts",
+    "where": {
+     "col": "kind",
+     "op": "in",
+     "value": [
+      "exe",
+      "binding",
+      "bundle"
+     ]
+    },
+    "select": [
+     "name"
+    ]
+   },
+   "op": ">=",
+   "value": 5
+  }
+ },
+ {
+  "source_clause": "五个产物的 sha256 均出现在产物清单文档 ARTIFACTS.md 中。",
+  "anchor": {
+   "quote": "五个产物的 sha256 均出现在产物清单文档 ARTIFACTS.md 中。",
+   "locator": "material.md#S3"
+  },
+  "title": "五个哈希均见于产物清单",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "doc_matches",
+    "where": {
+     "col": "in_doc",
+     "op": "=",
+     "value": "yes"
+    },
+    "select": [
+     "name"
+    ]
+   },
+   "op": ">=",
+   "value": 5
+  }
+ },
+ {
+  "source_clause": "发布门在本机执行并记录 693 个通过、0 个失败。",
+  "anchor": {
+   "quote": "发布门在本机执行并记录 693 个通过、0 个失败。",
+   "locator": "material.md#S4"
+  },
+  "title": "门禁通过数 693",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "=",
+       "value": "gate_passed"
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "693"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 1
+  }
+ },
+ {
+  "source_clause": "发布门在本机执行并记录 693 个通过、0 个失败。",
+  "anchor": {
+   "quote": "发布门在本机执行并记录 693 个通过、0 个失败。",
+   "locator": "material.md#S4"
+  },
+  "title": "门禁失败数 0",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "=",
+       "value": "gate_failed"
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "0"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 1
+  }
+ },
+ {
+  "source_clause": "发布 tag v1.2.0 指向发布分支的当前提交。",
+  "anchor": {
+   "quote": "发布 tag v1.2.0 指向发布分支的当前提交。",
+   "locator": "material.md#S5"
+  },
+  "title": "tag v1.2.0 已登记",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "=",
+       "value": "tag"
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "v1.2.0"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 1
+  }
+ },
+ {
+  "source_clause": "发布 tag v1.2.0 指向发布分支的当前提交。",
+  "anchor": {
+   "quote": "发布 tag v1.2.0 指向发布分支的当前提交。",
+   "locator": "material.md#S5"
+  },
+  "title": "tag 提交等于发布分支头",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "=",
+       "value": "tag_matches_head"
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "yes"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 1
+  }
+ },
+ {
+  "source_clause": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+  "anchor": {
+   "quote": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+   "locator": "material.md#S6"
+  },
+  "title": "边界记录六项",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "=",
+       "value": "boundaries_declared"
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "6"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 1
+  }
+ },
+ {
+  "source_clause": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+  "anchor": {
+   "quote": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+   "locator": "material.md#S6"
+  },
+  "title": "agent 路径已验证",
+  "checker": {
+   "type": "count",
+   "predicate": {
+    "from": "facts",
+    "where": {
+     "op": "and",
+     "conditions": [
+      {
+       "col": "key",
+       "op": "=",
+       "value": "live_agent_verified"
+      },
+      {
+       "col": "value",
+       "op": "=",
+       "value": "yes"
+      }
+     ]
+    },
+    "select": [
+     "key"
+    ]
+   },
+   "op": ">=",
+   "value": 1
+  }
+ }
+]

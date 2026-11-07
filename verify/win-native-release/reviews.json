@@ -1,0 +1,220 @@
+{
+ "reviews": [
+  {
+   "source_clause": "发布版本号为 1.2.0，Cargo 工作区与四个 api 包的 version 字段一致。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "发布版本号为 1.2.0，Cargo 工作区与四个 api 包的 version 字段一致。",
+      "locator": "material.md#S1"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "发布包含五个产物：三个可执行文件、Node 绑定与插件 bundle。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "发布包含五个产物：三个可执行文件、Node 绑定与插件 bundle。",
+      "locator": "material.md#S2"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "五个产物的 sha256 均出现在产物清单文档 ARTIFACTS.md 中。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "五个产物的 sha256 均出现在产物清单文档 ARTIFACTS.md 中。",
+      "locator": "material.md#S3"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "发布门在本机执行并记录 693 个通过、0 个失败。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "发布门在本机执行并记录 693 个通过、0 个失败。",
+      "locator": "material.md#S4"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "发布门在本机执行并记录 693 个通过、0 个失败。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "发布门在本机执行并记录 693 个通过、0 个失败。",
+      "locator": "material.md#S4"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "发布 tag v1.2.0 指向发布分支的当前提交。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "发布 tag v1.2.0 指向发布分支的当前提交。",
+      "locator": "material.md#S5"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "发布 tag v1.2.0 指向发布分支的当前提交。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "发布 tag v1.2.0 指向发布分支的当前提交。",
+      "locator": "material.md#S5"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+      "locator": "material.md#S6"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  },
+  {
+   "source_clause": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+   "findings": [
+    {
+     "question": "faithful",
+     "verdict": "ok",
+     "reason": "逐字复读材料子句",
+     "anchor": {
+      "quote": "边界记录声明六项限制，且 agent 路径标记为已验证（CLI 路径）。",
+      "locator": "material.md#S6"
+     }
+    },
+    {
+     "question": "decidable",
+     "verdict": "ok",
+     "reason": "predicate AST 在快照表上可判定"
+    },
+    {
+     "question": "not-vacuous",
+     "verdict": "ok",
+     "reason": "断言要求至少 N 行命中，空表得 FAIL 而非 PASS"
+    }
+   ]
+  }
+ ]
+}
